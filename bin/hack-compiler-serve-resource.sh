@@ -4,7 +4,7 @@
 set -eu
 
 port=10641
-global=no
+replace=no
 launch_mode=server
 resource=
 
@@ -15,17 +15,16 @@ option_error() {
 }
 
 usage() {
-  echo "Usage: $0 [-p PORT] [-g] [-d] -b PATH"
+  echo "Usage: $0 [-p PORT] [-d] -b PATH"
   echo '  -b, -r PATH  Select the resource to run.'
-  echo '  -g  Compile the repository under /var/tmp.'
   echo '  -d  Run as a daemon.'
 }
 
 while getopts ':hp:b:r:gd' option; do
   case "$option" in
     h) usage; exit 0 ;;
+    g) ;;
     p) port=$OPTARG ;;
-    g) global=yes ;;
     d) launch_mode=daemon ;;
     b|r) resource=$OPTARG ;;
     \?) option_error "Unknown option: -$OPTARG" ;;
@@ -44,13 +43,18 @@ test -n "$resource" || option_error 'Select a resource with -b PATH or -r PATH.'
 test -f "$resource" || option_error "Resource file not found: $resource"
 resource=$(realpath --relative-to="$PWD" "$resource")
 
-work_root="$PWD/.var/hack-compiler-serve-resource"
-if [ "$global" = yes ]; then
-  work_root=/var/tmp/hack-compiler-serve-resource
-fi
+work_root="${TMPDIR:-/tmp}/hack-compiler-serve-resource"
 mkdir -p "$work_root"
 work_dir=$(mktemp -d "$work_root/server.XXXXXX")
-trap 'rm -rf "$work_dir"' 0
+server_pid=
+cleanup() {
+  if [ -n "$server_pid" ]; then
+    kill -INT "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
+  fi
+  rm -rf "$work_dir"
+}
+trap cleanup 0
 trap 'exit 1' HUP INT TERM
 if hhvm --hphp --help 2>&1 | grep -q -- '--target'; then
   set -- --target hhbc
@@ -58,16 +62,56 @@ fi
 hhvm --hphp "$@" "$resource" --output-dir "$work_dir"
 set --
 
+set -- -dhhvm.jit_retranslate_all_request=5
 if [ "$launch_mode" = daemon ]; then
-  set -- -dhhvm.log.file=/dev/null
+  command -v setsid > /dev/null || {
+    echo 'Daemon mode requires setsid.' >&2
+    exit 1
+  }
+  set -- "$@" -dhhvm.log.file=/dev/null
 fi
-hhvm -m "$launch_mode" -p "$port" --no-config \
-  -vServer.AllowRunAsRoot=1 \
-  -dhhvm.repo.authoritative=true \
-  "-dhhvm.repo.path=$work_dir/hhvm.hhbc" \
-  "-dhhvm.server.allowed_files[0]=$resource" \
-  "-dhhvm.server.global_document=$resource" \
-  -dhhvm.jit_retranslate_all_request=5 \
-  '-dhhvm.php_file.extensions[resource]=1' \
-  "-dhhvm.pid_file=$work_dir/www.pid" "$@"
-if [ "$launch_mode" = daemon ]; then trap - 0; fi
+if [ "$replace" = no ]; then
+  set -- "$@" "-dhhvm.pid_file=$work_dir/www.pid"
+fi
+start_server() {
+  if [ "$launch_mode" = daemon ]; then
+    set -- setsid hhvm "$@"
+  else
+    set -- hhvm "$@"
+  fi
+  exec "$@" -m server -p "$port" --no-config \
+    -vServer.AllowRunAsRoot=1 \
+    -vServer.ExitOnBindFail=true \
+    -dhhvm.repo.authoritative=true \
+    "-dhhvm.repo.path=$work_dir/hhvm.hhbc" \
+    "-dhhvm.server.global_document=$resource" \
+    "-dhhvm.server.allowed_files[0]=$resource" \
+    '-dhhvm.php_file.extensions[resource]=1'
+}
+if [ "$launch_mode" = daemon ]; then
+  start_server "$@" > /dev/null 2>&1 &
+else
+  start_server "$@" &
+fi
+server_pid=$!
+while :; do
+  if [ "$replace" = yes ]; then
+    if handshake && [ "$handshake_instance" = "$nonce" ]; then break; fi
+  elif [ -s "$work_dir/www.pid" ]; then
+    break
+  fi
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    wait "$server_pid"
+    exit 1
+  fi
+  sleep 0.1
+done
+rm -rf "$work_dir"
+if [ "$launch_mode" = daemon ]; then
+  server_pid=
+  exit 0
+fi
+server_status=0
+wait "$server_pid" || server_status=$?
+server_pid=
+exit "$server_status"

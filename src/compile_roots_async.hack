@@ -10,6 +10,7 @@ async function compile_roots_async(
   vec<string> $excludes,
   CompileMode $mode,
   bool $typecheck = false,
+  bool $replace = false,
 )[defaults]: Awaitable<string> {
   invariant(
     C\every(
@@ -30,8 +31,8 @@ async function compile_roots_async(
   $resource = _Private\compile_resource($files);
   if ($typecheck) {
     await _Private\typecheck_resource_async(
-      _Private\rewrite_server_paths($resource, $mode),
+      _Private\prepare_server_resource($resource, $mode, $replace),
     );
   }
-  return wrap_resource($resource, $mode);
+  return wrap_resource($resource, $mode, $replace);
 }

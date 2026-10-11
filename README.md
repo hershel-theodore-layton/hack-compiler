@@ -49,33 +49,37 @@ vendor/bin/hack-compiler-serve-resource.sh -b ./server.resource -d -p 10641
 hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck]
 hack-compiler-serve-resource.sh -b PATH [-p PORT] [-g] [-d]
 
---mode MODE       Required: resource, cli, server, or server-obsolete.
---root PATH       Required. Select a file or recursively collect .hack files
-                  from a directory. May be repeated; overlaps are deduplicated.
---exclude PREFIX  Skip paths starting with this prefix. May be repeated.
---typecheck       Check the combined source with hh_server before emitting it.
---help            Show usage.
+--mode MODE           Required: resource, cli, server, or server-obsolete.
+--root PATH           Required. Select a file or recursively collect .hack files
+                      from a directory. May be repeated; overlaps are deduplicated.
+--exclude PREFIX      Skip paths starting with this prefix. May be repeated.
+--typecheck           Check the combined source with hh_server before emitting it.
+--enable-self-update  Allow another server to replace a running one.
+--help                Show usage.
 
 Paths may be relative or absolute. Output is written to stdout.
 
-resource          Emit plain Hack source.
-cli               Embed source in a shell launcher that invokes its entrypoint.
-server            Embed source in a server launcher. Supports -d and -p PORT.
-server-obsolete   Preserve the legacy Linters Server launcher. Pass -e to use
-                  embedded source; -b PATH selects an external resource.
+resource              Emit plain Hack source.
+cli                   Embed source in a shell launcher that invokes its entrypoint.
+server                Embed source in a server launcher. Supports -d and -p PORT.
+server-obsolete       Preserve the legacy Linters Server launcher. Pass -e to use
+                      embedded source; -b PATH selects an external resource.
 
-CLI launchers:    --hhvm-args starts HHVM options; -- resumes script arguments.
-                  Without --hhvm-args, all arguments go to the script.
+CLI launchers:        --hhvm-args starts HHVM options; -- resumes script arguments.
+                      Without --hhvm-args, all arguments go to the script.
 ```
 
-Embedded server modes rewrite `__FILE__` and `__DIR__` expressions to refer to
-the canonical launcher path and its directory (symlinks are resolved). The
-replacement reads the launcher path at runtime, including in contexts that
-require constants. Use `--typecheck` to catch illegal constant expressions and
-incompatible effects before emitting the launcher. Without it, HHVM rejects
-illegal constant expressions when the resource is loaded at runtime.
+## Mangling
 
-The rewritten resource requires the environment variable supplied by the
-launcher. The rewrite replaces matching name tokens even in declaration, type
-and member positions; unusual uses of these names can fail to parse or run.
-Strings, comments and literal XHP content stay unchanged.
+When compiling in server mode, the hack-compiler does a best-effort to make
+`__FILE__` and `__DIR__` refer to your server script. This transformation might
+result in a parse error at start-up. `--typecheck` will inform you if your code
+has been mangled wrong.
+
+## Servers that self update
+
+If you compiled your server with `--enable-self-update`, a small shim is
+injected before your application code. It identifies itself on requests matching
+`/?__hack_compiler_handshake`. If you then start a second server on the same
+port, the launcher will kill the process of the old server before taking its
+place.

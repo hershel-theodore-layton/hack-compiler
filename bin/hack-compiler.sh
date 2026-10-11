@@ -116,6 +116,335 @@ enum CompileMode: string {
   SERVER_OBSOLETE = 'server-obsolete';
 }
 
+///// src/_Private/CLI_HEADER.hack /////
+namespace HTL\HackCompiler\_Private;
+/** hack-compiler is MIT licensed, see /LICENSE. */
+
+const string CLI_HEADER = <<<'SH'
+#!/bin/sh
+set -eu
+
+hack_compiler_cli_directory=$(mktemp -d "${TMPDIR:-/tmp}/hack-compiler-cli.XXXXXX")
+trap 'rm -rf "$hack_compiler_cli_directory"' 0
+trap 'exit 1' HUP INT TERM
+tail -n +__SOURCE_LINE__ "$0" > "$hack_compiler_cli_directory/source.resource"
+
+# Quote each argument before rebuilding the two argument lists in POSIX sh.
+hack_compiler_cli_quote() {
+  hack_compiler_cli_value=$1
+  printf "'"
+  while case "$hack_compiler_cli_value" in *\'*) true ;; *) false ;; esac; do
+    printf '%s' "${hack_compiler_cli_value%%\'*}" "'\\''"
+    hack_compiler_cli_value=${hack_compiler_cli_value#*\'}
+  done
+  printf "%s' " "$hack_compiler_cli_value"
+}
+
+hack_compiler_cli_mode=script
+hack_compiler_cli_hhvm_arguments=
+hack_compiler_cli_script_arguments=
+for hack_compiler_cli_argument in "$@"; do
+  case "$hack_compiler_cli_mode:$hack_compiler_cli_argument" in
+    script:--hhvm-args) hack_compiler_cli_mode=hhvm ;;
+    hhvm:--) hack_compiler_cli_mode=remaining ;;
+    hhvm:*)
+      hack_compiler_cli_hhvm_arguments="$hack_compiler_cli_hhvm_arguments$(hack_compiler_cli_quote "$hack_compiler_cli_argument")"
+      ;;
+    *)
+      hack_compiler_cli_script_arguments="$hack_compiler_cli_script_arguments$(hack_compiler_cli_quote "$hack_compiler_cli_argument")"
+      ;;
+  esac
+done
+eval "set -- $hack_compiler_cli_hhvm_arguments \"\$hack_compiler_cli_directory/source.resource\" $hack_compiler_cli_script_arguments"
+hhvm "$@"
+SH;
+
+///// src/_Private/OBSOLETE_SERVER_OPTIONS.hack /////
+namespace HTL\HackCompiler\_Private;
+/** hack-compiler is MIT licensed, see /LICENSE. */
+
+const string OBSOLETE_SERVER_OPTIONS = <<<'SH'
+#!/bin/sh
+set -eu
+replace=no
+legacy=yes
+
+port=10641
+setup=no
+launch_mode=server
+bundled=no
+trusted=no
+resource=
+
+usage() {
+  echo "Usage: $0 [-p PORT] [-s] [-d] [-t] [-e | -b PATH | -r PATH]"
+  echo '  -e  Use the resource embedded in this script.'
+  echo '  -b, -r PATH  Use and trust an external resource.'
+  echo '  -s  Set up VS Code for Docker Native development.'
+  echo '  -d  Run as a daemon.'
+  echo '  -t  Trust the discovered external resource.'
+}
+
+option_error() {
+  echo "$1" >&2
+  usage >&2
+  exit 1
+}
+
+while getopts ':hp:b:r:gsdite' option; do
+  case "$option" in
+    h) usage; exit 0 ;;
+    g) ;;
+    p) port=$OPTARG ;;
+    s) setup=yes ;;
+    d) launch_mode=daemon ;;
+    i) option_error 'Interpreter mode (-i) is no longer supported.' ;;
+    t) trusted=yes ;;
+    e) bundled=yes; trusted=yes ;;
+    b|r) resource=$OPTARG; trusted=yes ;;
+    \?) option_error "Unknown option: -$OPTARG" ;;
+    :) option_error "Option -$OPTARG requires an argument" ;;
+  esac
+done
+shift "$((OPTIND - 1))"
+test "$#" -eq 0 || option_error "Unexpected argument: $1"
+case "$port" in
+  ''|*[!0-9]*) option_error 'Port must be an integer from 1 to 65535' ;;
+esac
+if ! { [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; }; then
+  option_error 'Port must be an integer from 1 to 65535'
+fi
+test -f .hhconfig || option_error 'Run this script from the project root.'
+if [ "$replace" = yes ] && [ "$bundled" != yes ]; then
+  option_error 'Replacement launchers require the embedded resource (-e).'
+fi
+if [ "$bundled" = yes ]; then
+  test -z "$resource" || option_error '-e cannot be combined with -b or -r.'
+else
+  if [ -z "$resource" ]; then
+    resource=$(find . -type f -name portable-hack-ast-linters-server-bundled.resource | head -n 1)
+  fi
+  test -f "$resource" || option_error "Bundle file not found: $resource"
+  resource=$(realpath --relative-to="$PWD" "$resource")
+fi
+
+if [ "$setup" = yes ] && [ ! -f .vscode/settings.json ]; then
+  mkdir -p .vscode
+  linter_port=$(grep -A 1 'ports' docker-compose.yml | cut -d ':' -f 1 | grep -E -o '[[:digit:]]{5}')
+  container_name=$(sed -n 's/^[[:space:]]*container_name:[[:space:]]*//p' docker-compose.yml)
+  cat > .vscode/settings.json <<JSON
+{
+  "editor.detectIndentation": false,
+  "editor.tabSize": 2,
+  "editor.rulers": [80],
+  "hack.remote.docker.containerName": "$container_name",
+  "hack.remote.enabled": true,
+  "hack.remote.type": "docker",
+  "hack.remote.workspacePath": "/mnt/project",
+  "lintServer.uri": "http://localhost:$linter_port?action=lint-input&format=vscode-json"
+}
+JSON
+  cat > .vscode/extensions.json <<'JSON'
+{
+  "recommendations": [
+    "pranayagarwal.vscode-hack",
+    "hershel-theodore-layton.dead-simple-lint-server-integration"
+  ]
+}
+JSON
+fi
+SH;
+
+///// src/_Private/SERVER_OPTIONS.hack /////
+namespace HTL\HackCompiler\_Private;
+/** hack-compiler is MIT licensed, see /LICENSE. */
+
+const string SERVER_OPTIONS = <<<'SH'
+#!/bin/sh
+set -eu
+
+port=10641
+launch_mode=server
+bundled=yes
+replace=no
+legacy=no
+trusted=yes
+while getopts ':hdep:' option; do
+  case "$option" in
+    h) echo "Usage: $0 [-d] [-e] [-p PORT]"; exit 0 ;;
+    d) launch_mode=daemon ;;
+    e) ;;
+    p) port=$OPTARG ;;
+    *) echo "Usage: $0 [-d] [-e] [-p PORT]" >&2; exit 1 ;;
+  esac
+done
+shift "$((OPTIND - 1))"
+test "$#" -eq 0 || { echo "Unexpected argument: $1" >&2; exit 1; }
+SH;
+
+///// src/_Private/SERVER_PREPARE_RUNTIME.hack /////
+namespace HTL\HackCompiler\_Private;
+/** hack-compiler is MIT licensed, see /LICENSE. */
+
+const string SERVER_PREPARE_RUNTIME = <<<'SH'
+if [ "$launch_mode" = daemon ]; then
+  command -v setsid > /dev/null || {
+    echo 'Daemon mode requires setsid.' >&2
+    exit 1
+  }
+fi
+work_root="${TMPDIR:-/tmp}/hack-compiler"
+mkdir -p "$work_root"
+work_dir=$(mktemp -d "$work_root/server.XXXXXX")
+server_pid=
+cleanup() {
+  if [ -n "$server_pid" ]; then
+    kill -INT "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
+  fi
+  rm -rf "$work_dir"
+}
+trap cleanup 0
+trap 'exit 1' HUP INT TERM
+
+if [ "$trusted" = no ]; then
+  echo "Found the following resource file: $resource"
+  echo "If you trust it, type 'I trust this resource' to build and run it."
+  read -r confirmation
+  test "$confirmation" = 'I trust this resource' || exit 1
+fi
+if [ "$bundled" = yes ]; then
+  resource=source.resource
+  tail -n +__SOURCE_LINE__ "$0" > "$work_dir/$resource"
+fi
+if [ "$replace" = yes ]; then hhvm --lint "$work_dir/$resource" > /dev/null; fi
+if hhvm --hphp --help 2>&1 | grep -q -- '--target'; then
+  set -- --target hhbc
+fi
+if [ "$bundled" = yes ]; then set -- "$@" --input-dir "$work_dir"; fi
+hhvm --hphp "$@" "$resource" --output-dir "$work_dir"
+set --
+if [ "$legacy" = yes ]; then set -- -dhhvm.jit_retranslate_all_request=5; fi
+if [ "$bundled" = yes ]; then rm "$work_dir/$resource"; fi
+export HACK_COMPILER_SERVER_FILE=$(realpath "$0")
+SH;
+
+///// src/_Private/SERVER_REPLACE_RUNTIME.hack /////
+namespace HTL\HackCompiler\_Private;
+/** hack-compiler is MIT licensed, see /LICENSE. */
+
+const string SERVER_REPLACE_RUNTIME = <<<'SH'
+nonce=$(basename "$work_dir")
+pid_namespace=$(readlink /proc/self/ns/pid)
+
+# 0: compatible server, 1: no listener, 2: failed or unrecognized handshake.
+handshake() {
+  handshake_status=0
+  handshake_reply=$(curl --noproxy '*' --fail --silent --max-time 1 \
+    "http://127.0.0.1:$port/?__hack_compiler_handshake=$nonce") || handshake_status=$?
+  if [ "$handshake_status" -eq 7 ]; then return 1; fi
+  if [ "$handshake_status" -ne 0 ]; then return 2; fi
+  case "$handshake_reply" in
+    "hack-compiler/1:$nonce:$pid_namespace:"*) ;;
+    *) return 2 ;;
+  esac
+  handshake_reply=${handshake_reply#"hack-compiler/1:$nonce:$pid_namespace:"}
+  handshake_instance=${handshake_reply%:*}
+  handshake_pid=${handshake_reply##*:}
+  case "$handshake_instance" in ''|*[!a-zA-Z0-9.]*) return 2 ;; esac
+  case "$handshake_pid" in ''|*[!0-9]*) return 2 ;; esac
+  test "$handshake_pid" -gt 1 || return 2
+}
+
+if handshake; then
+  previous_pid=$handshake_pid
+  previous_instance=$handshake_instance
+  echo "Replacing server on port $port."
+  if ! kill -INT "$previous_pid"; then
+    echo "Could not stop the previous server on port $port." >&2
+    exit 1
+  fi
+  attempts=0
+  while :; do
+    if handshake; then
+      if [ "$handshake_pid" != "$previous_pid" ] ||
+         [ "$handshake_instance" != "$previous_instance" ]; then
+        echo "Port $port changed owners while replacing the server." >&2
+        exit 1
+      fi
+    elif [ "$?" -eq 1 ]; then
+      break
+    fi
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 50 ]; then
+      echo "Previous server did not release port $port." >&2
+      exit 1
+    fi
+    sleep 0.1
+  done
+elif [ "$?" -ne 1 ]; then
+  echo "Port $port did not complete the hack-compiler handshake; leaving it running." >&2
+  exit 1
+fi
+
+export HACK_COMPILER_SERVER_INSTANCE=$nonce
+SH;
+
+///// src/_Private/SERVER_RUNTIME.hack /////
+namespace HTL\HackCompiler\_Private;
+/** hack-compiler is MIT licensed, see /LICENSE. */
+
+const string SERVER_RUNTIME = <<<'SH'
+if [ "$launch_mode" = daemon ]; then
+  set -- "$@" -dhhvm.log.file=/dev/null
+fi
+if [ "$replace" = no ]; then
+  set -- "$@" "-dhhvm.pid_file=$work_dir/www.pid"
+fi
+start_server() {
+  if [ "$launch_mode" = daemon ]; then
+    set -- setsid hhvm "$@"
+  else
+    set -- hhvm "$@"
+  fi
+  exec "$@" -m server -p "$port" --no-config \
+    -vServer.AllowRunAsRoot=1 \
+    -vServer.ExitOnBindFail=true \
+    -dhhvm.repo.authoritative=true \
+    "-dhhvm.repo.path=$work_dir/hhvm.hhbc" \
+    "-dhhvm.server.global_document=$resource" \
+    "-dhhvm.server.allowed_files[0]=$resource" \
+    '-dhhvm.php_file.extensions[resource]=1'
+}
+if [ "$launch_mode" = daemon ]; then
+  start_server "$@" > /dev/null 2>&1 &
+else
+  start_server "$@" &
+fi
+server_pid=$!
+while :; do
+  if [ "$replace" = yes ]; then
+    if handshake && [ "$handshake_instance" = "$nonce" ]; then break; fi
+  elif [ -s "$work_dir/www.pid" ]; then
+    break
+  fi
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    wait "$server_pid"
+    exit 1
+  fi
+  sleep 0.1
+done
+rm -rf "$work_dir"
+if [ "$launch_mode" = daemon ]; then
+  server_pid=
+  exit 0
+fi
+server_status=0
+wait "$server_pid" || server_status=$?
+server_pid=
+exit "$server_status"
+SH;
+
 ///// src/_Private/ast.hack /////
 namespace HTL\HackCompiler\_Private;
 /** hack-compiler is MIT licensed, see /LICENSE. */
@@ -368,11 +697,12 @@ async function cli_async()[defaults]: Awaitable<void> {
   $output = IO\request_output();
   if (C\is_empty($args) || $args[0] === '--help') {
     await $output->writeAllAsync(
-      "Usage: hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck]\n".
+      "Usage: hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--enable-self-update]\n".
       "Modes: resource, cli, server, server-obsolete.\n".
       "Roots select files or directories of .hack files recursively.\n".
       "Paths are sorted relative to the current directory.\n".
       "--typecheck checks the compiled resource before emitting output.\n".
+      "--enable-self-update enables handshake-based replacement in server modes.\n".
       "The output is written to stdout.\n",
     );
     exit(C\is_empty($args) ? 1 : 0);
@@ -383,7 +713,13 @@ async function cli_async()[defaults]: Awaitable<void> {
     $excludes = vec[];
     $mode = null;
     $typecheck = false;
+    $replace = false;
     while (!C\is_empty($args)) {
+      if ($args[0] === '--enable-self-update') {
+        $replace = true;
+        $args = Vec\drop($args, 1);
+        continue;
+      }
       if ($args[0] === '--typecheck') {
         $typecheck = true;
         $args = Vec\drop($args, 1);
@@ -421,6 +757,7 @@ async function cli_async()[defaults]: Awaitable<void> {
       $excludes,
       $mode,
       $typecheck,
+      $replace,
     );
     await $output->writeAllAsync($compiled);
   } catch (Exception $e) {
@@ -429,49 +766,6 @@ async function cli_async()[defaults]: Awaitable<void> {
     exit(1);
   }
 }
-
-///// src/_Private/cli_header.hack /////
-namespace HTL\HackCompiler\_Private;
-/** hack-compiler is MIT licensed, see /LICENSE. */
-
-const string CLI_HEADER = <<<'SH'
-#!/bin/sh
-set -eu
-
-hack_compiler_cli_directory=$(mktemp -d "${TMPDIR:-/tmp}/hack-compiler-cli.XXXXXX")
-trap 'rm -rf "$hack_compiler_cli_directory"' 0
-trap 'exit 1' HUP INT TERM
-tail -n +__SOURCE_LINE__ "$0" > "$hack_compiler_cli_directory/source.resource"
-
-# Quote each argument before rebuilding the two argument lists in POSIX sh.
-hack_compiler_cli_quote() {
-  hack_compiler_cli_value=$1
-  printf "'"
-  while case "$hack_compiler_cli_value" in *\'*) true ;; *) false ;; esac; do
-    printf '%s' "${hack_compiler_cli_value%%\'*}" "'\\''"
-    hack_compiler_cli_value=${hack_compiler_cli_value#*\'}
-  done
-  printf "%s' " "$hack_compiler_cli_value"
-}
-
-hack_compiler_cli_mode=script
-hack_compiler_cli_hhvm_arguments=
-hack_compiler_cli_script_arguments=
-for hack_compiler_cli_argument in "$@"; do
-  case "$hack_compiler_cli_mode:$hack_compiler_cli_argument" in
-    script:--hhvm-args) hack_compiler_cli_mode=hhvm ;;
-    hhvm:--) hack_compiler_cli_mode=remaining ;;
-    hhvm:*)
-      hack_compiler_cli_hhvm_arguments="$hack_compiler_cli_hhvm_arguments$(hack_compiler_cli_quote "$hack_compiler_cli_argument")"
-      ;;
-    *)
-      hack_compiler_cli_script_arguments="$hack_compiler_cli_script_arguments$(hack_compiler_cli_quote "$hack_compiler_cli_argument")"
-      ;;
-  esac
-done
-eval "set -- $hack_compiler_cli_hhvm_arguments \"\$hack_compiler_cli_directory/source.resource\" $hack_compiler_cli_script_arguments"
-hhvm "$@"
-SH;
 
 ///// src/_Private/compile_resource.hack /////
 namespace HTL\HackCompiler\_Private;
@@ -522,176 +816,72 @@ async function format_source_async(
   return await $output->getHandle()->readAllAsync();
 }
 
-///// src/_Private/obsolete_server_header.hack /////
+///// src/_Private/prepare_server_resource.hack /////
 namespace HTL\HackCompiler\_Private;
 /** hack-compiler is MIT licensed, see /LICENSE. */
 
-const string OBSOLETE_SERVER_HEADER = <<<'SH'
-#!/bin/sh
-set -eu
+use type HTL\HackCompiler\CompileMode;
 
-port=10641
-global=no
-setup=no
-launch_mode=server
-bundled=no
-trusted=no
-resource=
-
-usage() {
-  echo "Usage: $0 [-p PORT] [-g] [-s] [-d] [-t] [-e | -b PATH | -r PATH]"
-  echo '  -e  Use the resource embedded in this script.'
-  echo '  -b, -r PATH  Use and trust an external resource.'
-  echo '  -g  Cache the compiled repository under /var/tmp.'
-  echo '  -s  Set up VS Code for Docker Native development.'
-  echo '  -d  Run as a daemon.'
-  echo '  -t  Trust the discovered external resource.'
+function prepare_server_resource(
+  string $resource,
+  CompileMode $mode,
+  bool $replace,
+)[]: string {
+  invariant(
+    !$replace ||
+      $mode === CompileMode::SERVER ||
+      $mode === CompileMode::SERVER_OBSOLETE,
+    '--enable-self-update is only supported in server modes.',
+  );
+  $resource = rewrite_server_paths($resource, $mode);
+  return $replace ? rewrite_server_control($resource) : $resource;
 }
 
-option_error() {
-  echo "$1" >&2
-  usage >&2
-  exit 1
+///// src/_Private/rewrite_server_control.hack /////
+namespace HTL\HackCompiler\_Private;
+/** hack-compiler is MIT licensed, see /LICENSE. */
+
+use namespace HH\Lib\{C, Str, Vec};
+
+function rewrite_server_control(string $source)[]: string {
+  $entrypoints = Vec\filter(
+    ast_nodes_of_kind(ast_parse_script($source), 'function_declaration'),
+    $function ==> C\any(
+      ast_nodes_of_kind(
+        sub_array($function, 'function_attribute_spec'),
+        'constructor_call',
+      ),
+      $attribute ==>
+        ast_node_text(sub_array($attribute, 'constructor_call_type')) ===
+          '__EntryPoint',
+    ),
+  );
+  invariant(
+    C\count($entrypoints) === 1,
+    '--enable-self-update requires exactly one entrypoint.',
+  );
+  $brace = sub_array(
+    C\firstx($entrypoints),
+    'function_body',
+    'compound_left_brace',
+    'token',
+  );
+  $offset = ast_token_text_end($brace);
+  return
+    Str\slice($source, 0, $offset).SERVER_CONTROL.Str\slice($source, $offset);
 }
 
-while getopts ':hp:b:r:gsdite' option; do
-  case "$option" in
-    h) usage; exit 0 ;;
-    p) port=$OPTARG ;;
-    g) global=yes ;;
-    s) setup=yes ;;
-    d) launch_mode=daemon ;;
-    i) option_error 'Interpreter mode (-i) is no longer supported.' ;;
-    t) trusted=yes ;;
-    e) bundled=yes; trusted=yes ;;
-    b|r) resource=$OPTARG; trusted=yes ;;
-    \?) option_error "Unknown option: -$OPTARG" ;;
-    :) option_error "Option -$OPTARG requires an argument" ;;
-  esac
-done
-shift "$((OPTIND - 1))"
-test "$#" -eq 0 || option_error "Unexpected argument: $1"
-case "$port" in
-  ''|*[!0-9]*) option_error 'Port must be an integer from 1 to 65535' ;;
-esac
-if ! { [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; }; then
-  option_error 'Port must be an integer from 1 to 65535'
-fi
-test -f .hhconfig || option_error 'Run this script from the project root.'
-if [ "$bundled" = yes ]; then
-  test -z "$resource" || option_error '-e cannot be combined with -b or -r.'
-else
-  if [ -z "$resource" ]; then
-    resource=$(find . -type f -name portable-hack-ast-linters-server-bundled.resource | head -n 1)
-  fi
-  test -f "$resource" || option_error "Bundle file not found: $resource"
-  resource=$(realpath --relative-to="$PWD" "$resource")
-fi
+const string SERVER_CONTROL = <<<'HACK'
 
-if [ "$setup" = yes ] && [ ! -f .vscode/settings.json ]; then
-  mkdir -p .vscode
-  linter_port=$(grep -A 1 'ports' docker-compose.yml | cut -d ':' -f 1 | grep -E -o '[[:digit:]]{5}')
-  container_name=$(sed -n 's/^[[:space:]]*container_name:[[:space:]]*//p' docker-compose.yml)
-  cat > .vscode/settings.json <<JSON
-{
-  "editor.detectIndentation": false,
-  "editor.tabSize": 2,
-  "editor.rulers": [80],
-  "hack.remote.docker.containerName": "$container_name",
-  "hack.remote.enabled": true,
-  "hack.remote.type": "docker",
-  "hack.remote.workspacePath": "/mnt/project",
-  "lintServer.uri": "http://localhost:$linter_port?action=lint-input&format=vscode-json"
-}
-JSON
-  cat > .vscode/extensions.json <<'JSON'
-{
-  "recommendations": [
-    "pranayagarwal.vscode-hack",
-    "hershel-theodore-layton.dead-simple-lint-server-integration"
-  ]
-}
-JSON
-fi
-
-name=$(basename "$0")
-source_dir=".var/hack-compiler/$name"
-cache_dir="$PWD/.var/portable-hack-ast-linters-server"
-if [ "$global" = yes ]; then
-  cache_dir=/var/tmp/portable-hack-ast-linters-server
-fi
-mkdir -p "$cache_dir"
-if [ "$bundled" = yes ]; then
-  mkdir -p "$source_dir"
-  resource="$source_dir/source.resource"
-  fingerprint="$(sha1sum "$0" | cut -d ' ' -f 1):$PWD"
-else
-  fingerprint=$(sha1sum "$resource")
-fi
-changed=yes
-if [ -f "$cache_dir/sha1sum.txt" ] &&
-   [ "$(cat "$cache_dir/sha1sum.txt")" = "$fingerprint" ]; then
-  if [ -f "$cache_dir/hhvm.hhbc" ]; then
-    changed=no
-  fi
-fi
-
-if [ -f "$cache_dir/www.pid" ]; then
-  pid=$(cat "$cache_dir/www.pid")
-  identity=$(curl --silent --max-time 5 "http://localhost:$port/?action=identify-yourself" || true)
-  if [ "$identity" = 'HTL\PhaLintersServer' ]; then
-    if [ "$changed" = no ]; then
-      echo 'Previous server is identical, nothing to do.'
-      exit 0
-    fi
-    echo 'Previous server is different, replacing it.'
-    kill -INT "$pid"
-    attempts=0
-    while kill -0 "$pid" 2>/dev/null && [ "$attempts" -lt 50 ]; do
-      sleep 0.1
-      attempts=$((attempts + 1))
-    done
-  else
-    echo 'Previous server left a dangling www.pid.'
-  fi
-  rm -f "$cache_dir/www.pid"
-fi
-
-trap 'if [ "$bundled" = yes ]; then rm -f "$resource"; fi' 0
-trap 'exit 1' HUP INT TERM
-if [ "$changed" = yes ] && [ "$trusted" = no ]; then
-  echo "Found the following resource file: $resource"
-  echo "If you trust it, type 'I trust this resource' to build and run it."
-  read -r confirmation
-  test "$confirmation" = 'I trust this resource' || exit 1
-fi
-if [ "$changed" = yes ]; then
-  if [ "$bundled" = yes ]; then
-    tail -n +__SOURCE_LINE__ "$0" > "$resource"
-  fi
-  if hhvm --hphp --help 2>&1 | grep -q -- '--target'; then
-    set -- --target hhbc
-  fi
-  hhvm --hphp "$@" "$resource" --output-dir "$cache_dir"
-  set --
-  if [ "$bundled" = yes ]; then rm "$resource"; fi
-fi
-printf '%s\n' "$fingerprint" > "$cache_dir/sha1sum.txt"
-
-if [ "$launch_mode" = daemon ]; then
-  set -- -dhhvm.log.file=/dev/null
-fi
-export HACK_COMPILER_SERVER_FILE=$(realpath "$0")
-hhvm -m "$launch_mode" -p "$port" --no-config \
-  -vServer.AllowRunAsRoot=1 \
-  -dhhvm.repo.authoritative=true \
-  "-dhhvm.repo.path=$cache_dir/hhvm.hhbc" \
-  "-dhhvm.server.global_document=$resource" \
-  "-dhhvm.server.allowed_files[0]=$resource" \
-  -dhhvm.jit_retranslate_all_request=5 \
-  '-dhhvm.php_file.extensions[resource]=1' \
-  "-dhhvm.pid_file=$cache_dir/www.pid" "$@"
-SH;
+  $hack_compiler_nonce = (\HH\global_get('_GET') as dict<_, _>)['__hack_compiler_handshake'] ?? null;
+  if ($hack_compiler_nonce is string) {
+    \header('Content-Type: text/plain');
+    echo 'hack-compiler/1:'.$hack_compiler_nonce.':'.
+      (\readlink('/proc/self/ns/pid') as string).':'.
+      (\getenv('HACK_COMPILER_SERVER_INSTANCE') as string).':'.(string)\getmypid();
+    exit(0);
+  }
+HACK;
 
 ///// src/_Private/rewrite_server_paths.hack /////
 namespace HTL\HackCompiler\_Private;
@@ -761,55 +951,6 @@ function rewrite_source(string $source)[]: string {
   $remaining = Str\slice($source, 0, $start).Str\slice($source, $end);
   return Str\format("namespace %s;\n%s\n", $name, Str\trim($remaining, "\n"));
 }
-
-///// src/_Private/server_header.hack /////
-namespace HTL\HackCompiler\_Private;
-/** hack-compiler is MIT licensed, see /LICENSE. */
-
-const string SERVER_HEADER = <<<'SH'
-#!/bin/sh
-set -eu
-
-port=10641
-launch_mode=server
-while getopts ':hdep:' option; do
-  case "$option" in
-    h) echo "Usage: $0 [-d] [-e] [-p PORT]"; exit 0 ;;
-    d) launch_mode=daemon ;;
-    e) ;;
-    p) port=$OPTARG ;;
-    *) echo "Usage: $0 [-d] [-e] [-p PORT]" >&2; exit 1 ;;
-  esac
-done
-shift "$((OPTIND - 1))"
-test "$#" -eq 0 || { echo "Unexpected argument: $1" >&2; exit 1; }
-
-mkdir -p .var/hack-compiler
-work_dir=$(mktemp -d "$PWD/.var/hack-compiler/server.XXXXXX")
-resource=".var/hack-compiler/$(basename "$work_dir")/source.resource"
-trap 'rm -rf "$work_dir"' 0
-trap 'exit 1' HUP INT TERM
-tail -n +__SOURCE_LINE__ "$0" > "$resource"
-if hhvm --hphp --help 2>&1 | grep -q -- '--target'; then
-  set -- --target hhbc
-fi
-hhvm --hphp "$@" "$resource" --output-dir "$work_dir"
-set --
-rm "$resource"
-if [ "$launch_mode" = daemon ]; then
-  set -- -dhhvm.log.file=/dev/null
-fi
-export HACK_COMPILER_SERVER_FILE=$(realpath "$0")
-hhvm -m "$launch_mode" -p "$port" --no-config \
-  -vServer.AllowRunAsRoot=1 \
-  -dhhvm.repo.authoritative=true \
-  "-dhhvm.repo.path=$work_dir/hhvm.hhbc" \
-  "-dhhvm.pid_file=$work_dir/www.pid" \
-  "-dhhvm.server.global_document=$resource" \
-  "-dhhvm.server.allowed_files[0]=$resource" \
-  '-dhhvm.php_file.extensions[resource]=1' "$@"
-if [ "$launch_mode" = daemon ]; then trap - 0; fi
-SH;
 
 ///// src/_Private/source_files.hack /////
 namespace HTL\HackCompiler\_Private;
@@ -935,8 +1076,12 @@ namespace HTL\HackCompiler;
 /** hack-compiler is MIT licensed, see /LICENSE. */
 
 /** Compile paths and source texts in insertion order. */
-function compile(dict<string, string> $sources, CompileMode $mode)[]: string {
-  return wrap_resource(_Private\compile_resource($sources), $mode);
+function compile(
+  dict<string, string> $sources,
+  CompileMode $mode,
+  bool $replace = false,
+)[]: string {
+  return wrap_resource(_Private\compile_resource($sources), $mode, $replace);
 }
 
 ///// src/compile_roots_async.hack /////
@@ -952,6 +1097,7 @@ async function compile_roots_async(
   vec<string> $excludes,
   CompileMode $mode,
   bool $typecheck = false,
+  bool $replace = false,
 )[defaults]: Awaitable<string> {
   invariant(
     C\every(
@@ -972,10 +1118,10 @@ async function compile_roots_async(
   $resource = _Private\compile_resource($files);
   if ($typecheck) {
     await _Private\typecheck_resource_async(
-      _Private\rewrite_server_paths($resource, $mode),
+      _Private\prepare_server_resource($resource, $mode, $replace),
     );
   }
-  return wrap_resource($resource, $mode);
+  return wrap_resource($resource, $mode, $replace);
 }
 
 ///// src/sign_source.hack /////
@@ -1012,8 +1158,12 @@ namespace HTL\HackCompiler;
 use namespace HH\Lib\{C, Str};
 
 /** Wrap an already compiled resource for the selected output mode. */
-function wrap_resource(string $resource, CompileMode $mode)[]: string {
-  $resource = _Private\rewrite_server_paths($resource, $mode);
+function wrap_resource(
+  string $resource,
+  CompileMode $mode,
+  bool $replace = false,
+)[]: string {
+  $resource = _Private\prepare_server_resource($resource, $mode, $replace);
   switch ($mode) {
     case CompileMode::RESOURCE:
       return $resource;
@@ -1021,11 +1171,21 @@ function wrap_resource(string $resource, CompileMode $mode)[]: string {
       $header = _Private\CLI_HEADER;
       break;
     case CompileMode::SERVER:
-      $header = _Private\SERVER_HEADER;
+      $header = _Private\SERVER_OPTIONS;
       break;
     case CompileMode::SERVER_OBSOLETE:
-      $header = _Private\OBSOLETE_SERVER_HEADER;
+      $header = _Private\OBSOLETE_SERVER_OPTIONS;
       break;
+  }
+  if ($mode === CompileMode::SERVER || $mode === CompileMode::SERVER_OBSOLETE) {
+    if ($replace) {
+      $header = Str\replace($header, 'replace=no', 'replace=yes');
+    }
+    $header .= "\n".
+      _Private\SERVER_PREPARE_RUNTIME.
+      "\n".
+      ($replace ? _Private\SERVER_REPLACE_RUNTIME."\n" : '').
+      _Private\SERVER_RUNTIME;
   }
   $header .= "\nexit 0\n__HACK_COMPILER_RESOURCE__\n";
   $source_line = C\count(Str\split($header, "\n"));

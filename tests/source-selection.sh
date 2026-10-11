@@ -41,6 +41,7 @@ expect_failure() {
   test -s invalid.error
 }
 expect_failure "$@" "$compiler" --mode resource --root sources --exclude sources
+expect_failure "$@" "$compiler" --mode resource --enable-self-update --root sources
 expect_failure "$@" "$compiler" --root sources
 expect_failure "$@" "$compiler" --mode resource --root nonexistent
 echo 'Explicit modes, recursive roots, overlapping roots, exclusions, and relative paths passed.'
