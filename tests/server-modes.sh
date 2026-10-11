@@ -70,6 +70,26 @@ wait_for_response() {
   exit 1
 }
 
+# Daemon launchers exit before their servers do. Repository cleanup also happens
+# before shutdown, so wait for the listener rather than a PID or directory.
+stop_server() {
+  kill -INT "$server_pid"
+  attempts=0
+  while [ "$attempts" -lt 100 ]; do
+    status=0
+    curl --noproxy '*' --silent --max-time 1 "http://127.0.0.1:$port/" \
+      > /dev/null || status=$?
+    if [ "$status" -eq 7 ]; then
+      server_pid=
+      return
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  echo "Server did not release port $port after SIGINT." >&2
+  exit 1
+}
+
 cp .hhconfig "$test_dir/.hhconfig"
 cat > "$test_dir/docker-compose.yml" <<YAML
 services:
@@ -100,9 +120,8 @@ fi
 grep -q 'leaving it running' refused.log
 wait_for_response compiled
 # Some HHVM versions crash during signal-driven shutdown; cleanup must still run.
-kill -INT "$server_pid"
+stop_server
 wait "$launcher_pid" || true
-server_pid=
 launcher_pid=
 test -z "$(find "$work_root" -name hhvm.hhbc -print)"
 test ! -d .var
@@ -112,8 +131,7 @@ wait_for_response compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
 test -z "$(find "$work_root" -name hhvm.hhbc -print)"
 test ! -f "$work_root"/server.*/source.resource
-kill -INT "$server_pid"
-server_pid=
+stop_server
 
 # Legacy options still support VS Code setup.
 rm -rf "$work_root"
@@ -126,8 +144,7 @@ test -z "$(find "$work_root" -name hhvm.hhbc -print)"
 test ! -f "$work_root"/server.*/source.resource
 grep -q '"hack.remote.docker.containerName": "compiler-test-container"' .vscode/settings.json
 grep -q 'localhost:48568?action=lint-input&format=vscode-json' .vscode/settings.json
-kill -INT "$server_pid"
-server_pid=
+stop_server
 
 # The standalone launcher accepts both aliases and cleans up foreground output.
 external_root="$TMPDIR/hack-compiler-serve-resource"
@@ -137,9 +154,8 @@ sh "$external_launcher" -r "$test_dir/portable-hack-ast-linters-server-bundled.r
 launcher_pid=$!
 wait_for_response compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
-kill -INT "$server_pid"
+stop_server
 wait "$launcher_pid" || true
-server_pid=
 launcher_pid=
 test -z "$(find "$external_root" -name hhvm.hhbc -print)"
 
@@ -147,8 +163,7 @@ sh "$external_launcher" -b "$external" -g -d -p "$port" > server.log 2>&1
 wait_for_response compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
 test -z "$(find "$external_root" -name hhvm.hhbc -print)"
-kill -INT "$server_pid"
-server_pid=
+stop_server
 # Both replacement modes replace identical launches and each other, without PID files.
 control() {
   reply=$(curl --fail --silent "http://localhost:$port/?__hack_compiler_handshake=test")
@@ -185,8 +200,7 @@ previous_pid=$server_pid
 wait_for_response compiled
 control
 test "$server_pid" = "$previous_pid"
-kill -INT "$server_pid"
-server_pid=
+stop_server
 attempts=0
 while [ -d "$work_root/$instance" ] && [ "$attempts" -lt 50 ]; do
   sleep 0.1
@@ -200,9 +214,8 @@ launcher_pid=$!
 wait_for_response compiled
 control
 test ! -d "$work_root/$instance"
-kill -INT "$server_pid"
+stop_server
 wait "$launcher_pid" || true
-server_pid=
 launcher_pid=
 test ! -d "$work_root/$instance"
 # The obsolete launcher still asks before running a discovered resource.
