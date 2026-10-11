@@ -292,7 +292,11 @@ function ast_token_text_start(AnyArray<arraykey, mixed> $token)[]: int {
 /** Token payloads in source order, excluding trivia. */
 function ast_tokens(
   AnyArray<arraykey, mixed> $node,
+  keyset<string> $excluded_kinds = keyset[],
 )[]: vec<AnyArray<arraykey, mixed>> {
+  if (C\contains($excluded_kinds, sub_string($node, 'kind'))) {
+    return vec[];
+  }
   switch (sub_string($node, 'kind')) {
     case 'token':
       return vec[sub_array($node, 'token')];
@@ -304,7 +308,10 @@ function ast_tokens(
     default:
       $children = Dict\filter_keys($node, $key ==> $key !== 'kind');
   }
-  return Vec\map($children, $child ==> ast_tokens($child as AnyArray<_, _>))
+  return Vec\map(
+    $children,
+    $child ==> ast_tokens($child as AnyArray<_, _>, $excluded_kinds),
+  )
     |> Vec\flatten($$);
 }
 
@@ -674,6 +681,7 @@ printf '%s\n' "$fingerprint" > "$cache_dir/sha1sum.txt"
 if [ "$launch_mode" = daemon ]; then
   set -- -dhhvm.log.file=/dev/null
 fi
+export HACK_COMPILER_SERVER_FILE=$(realpath "$0")
 hhvm -m "$launch_mode" -p "$port" --no-config \
   -vServer.AllowRunAsRoot=1 \
   -dhhvm.repo.authoritative=true \
@@ -684,6 +692,41 @@ hhvm -m "$launch_mode" -p "$port" --no-config \
   '-dhhvm.php_file.extensions[resource]=1' \
   "-dhhvm.pid_file=$cache_dir/www.pid" "$@"
 SH;
+
+///// src/_Private/rewrite_server_paths.hack /////
+namespace HTL\HackCompiler\_Private;
+/** hack-compiler is MIT licensed, see /LICENSE. */
+
+use namespace HH\Lib\{Str, Vec};
+use type HTL\HackCompiler\CompileMode;
+
+function rewrite_server_paths(string $source, CompileMode $mode)[]: string {
+  if ($mode !== CompileMode::SERVER && $mode !== CompileMode::SERVER_OBSOLETE) {
+    return $source;
+  }
+  // Replacing unbraced interpolated members can silently become literal text.
+  $tokens = ast_tokens(
+    ast_parse_script($source),
+    keyset['embedded_member_selection_expression'],
+  );
+  foreach (Vec\reverse($tokens) as $token) {
+    if (sub_string($token, 'kind') !== 'name') {
+      continue;
+    }
+    $text = Str\uppercase(ast_token_text($token));
+    if ($text !== '__DIR__' && $text !== '__FILE__') {
+      continue;
+    }
+    $replacement = "(\\getenv('HACK_COMPILER_SERVER_FILE') as string)";
+    if ($text === '__DIR__') {
+      $replacement = '\\dirname('.$replacement.')';
+    }
+    $source = Str\slice($source, 0, ast_token_text_start($token)).
+      $replacement.
+      Str\slice($source, ast_token_text_end($token));
+  }
+  return $source;
+}
 
 ///// src/_Private/rewrite_source.hack /////
 namespace HTL\HackCompiler\_Private;
@@ -756,6 +799,7 @@ rm "$resource"
 if [ "$launch_mode" = daemon ]; then
   set -- -dhhvm.log.file=/dev/null
 fi
+export HACK_COMPILER_SERVER_FILE=$(realpath "$0")
 hhvm -m "$launch_mode" -p "$port" --no-config \
   -vServer.AllowRunAsRoot=1 \
   -dhhvm.repo.authoritative=true \
@@ -927,7 +971,9 @@ async function compile_roots_async(
   invariant(!C\is_empty($files), 'No files selected for compilation.');
   $resource = _Private\compile_resource($files);
   if ($typecheck) {
-    await _Private\typecheck_resource_async($resource);
+    await _Private\typecheck_resource_async(
+      _Private\rewrite_server_paths($resource, $mode),
+    );
   }
   return wrap_resource($resource, $mode);
 }
@@ -967,6 +1013,7 @@ use namespace HH\Lib\{C, Str};
 
 /** Wrap an already compiled resource for the selected output mode. */
 function wrap_resource(string $resource, CompileMode $mode)[]: string {
+  $resource = _Private\rewrite_server_paths($resource, $mode);
   switch ($mode) {
     case CompileMode::RESOURCE:
       return $resource;

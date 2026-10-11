@@ -67,3 +67,15 @@ server-obsolete   Preserve the legacy Linters Server launcher. Pass -e to use
 CLI launchers:    --hhvm-args starts HHVM options; -- resumes script arguments.
                   Without --hhvm-args, all arguments go to the script.
 ```
+
+Embedded server modes rewrite `__FILE__` and `__DIR__` expressions to refer to
+the canonical launcher path and its directory (symlinks are resolved). The
+replacement reads the launcher path at runtime, including in contexts that
+require constants. Use `--typecheck` to catch illegal constant expressions and
+incompatible effects before emitting the launcher. Without it, HHVM rejects
+illegal constant expressions when the resource is loaded at runtime.
+
+The rewritten resource requires the environment variable supplied by the
+launcher. The rewrite replaces matching name tokens even in declaration, type
+and member positions; unusual uses of these names can fail to parse or run.
+Strings, comments and literal XHP content stay unchanged.

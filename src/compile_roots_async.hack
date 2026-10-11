@@ -29,7 +29,9 @@ async function compile_roots_async(
   invariant(!C\is_empty($files), 'No files selected for compilation.');
   $resource = _Private\compile_resource($files);
   if ($typecheck) {
-    await _Private\typecheck_resource_async($resource);
+    await _Private\typecheck_resource_async(
+      _Private\rewrite_server_paths($resource, $mode),
+    );
   }
   return wrap_resource($resource, $mode);
 }

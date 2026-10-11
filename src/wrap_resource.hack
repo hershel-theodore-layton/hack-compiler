@@ -5,6 +5,7 @@ use namespace HH\Lib\{C, Str};
 
 /** Wrap an already compiled resource for the selected output mode. */
 function wrap_resource(string $resource, CompileMode $mode)[]: string {
+  $resource = _Private\rewrite_server_paths($resource, $mode);
   switch ($mode) {
     case CompileMode::RESOURCE:
       return $resource;

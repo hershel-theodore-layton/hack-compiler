@@ -28,10 +28,15 @@ for mode in resource server server-obsolete; do
   hhvm "$@" bin/hack-compiler.hack --mode "$mode" \
     --root tests/fixtures/server.hack.fixture > "$test_dir/$mode"
 done
+# Both server modes embed the same rewritten resource.
 for mode in server server-obsolete; do
   line=$(awk '/^__HACK_COMPILER_RESOURCE__$/ { print NR + 1; exit }' "$test_dir/$mode")
   tail -n +"$line" "$test_dir/$mode" > "$test_dir/extracted.resource"
-  cmp "$test_dir/resource" "$test_dir/extracted.resource"
+  if [ "$mode" = server ]; then
+    cp "$test_dir/extracted.resource" "$test_dir/server.resource"
+  else
+    cmp "$test_dir/server.resource" "$test_dir/extracted.resource"
+  fi
   sh "$test_dir/$mode" -h > /dev/null
 done
 
@@ -73,6 +78,7 @@ sh ./server -e -p "$port" > server.log 2>&1 &
 launcher_pid=$!
 wait_for_response compiled
 server_pid=$(cat .var/hack-compiler/server.*/www.pid)
+test "$(curl --silent "http://localhost:$port/?action=paths")" = "$test_dir|$test_dir/server"
 test ! -f .var/hack-compiler/server.*/source.resource
 # Some HHVM versions crash during signal-driven shutdown; cleanup must still run.
 kill -INT "$server_pid"
@@ -94,6 +100,7 @@ script=./server-obsolete
 sh "$script" -e -d -g -s -p "$port" > server.log 2>&1
 wait_for_response compiled
 server_pid=$(cat "$global_cache/www.pid")
+test "$(curl --silent "http://localhost:$port/?action=paths")" = "$test_dir|$test_dir/server-obsolete"
 test -f "$global_cache/hhvm.hhbc"
 test ! -f ".var/hack-compiler/$(basename "$script")/source.resource"
 grep -q '"hack.remote.docker.containerName": "compiler-test-container"' .vscode/settings.json

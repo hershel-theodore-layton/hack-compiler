@@ -2,6 +2,7 @@
 namespace HTL\HackCompiler\Tests;
 
 use namespace HH;
+use namespace HH\Lib\Str;
 use namespace HTL\HackCompiler;
 
 <<__EntryPoint>>
@@ -75,6 +76,54 @@ function main()[defaults]: void {
     $ordered ===
       "///// z.hack /////\nconst int Z = 1;\n\n///// a.hack /////\nconst int A = 2;\n",
     'Input order and separator bytes must be preserved.',
+  );
+  $xhp = 'function markup(): mixed { '.
+    'return <__FILE__ __DIR__="__FILE__">__DIR__ {__FILE__}</__FILE__>; }';
+  $server = HackCompiler\compile(
+    dict['markup.hack' => $xhp],
+    HackCompiler\CompileMode::SERVER,
+  );
+  HH\invariant(
+    Str\contains($server, '<__FILE__ __DIR__="__FILE__">__DIR__ {') &&
+      Str\contains($server, '</__FILE__>') &&
+      !Str\contains($server, '{__FILE__}'),
+    'Literal XHP content must stay unchanged, but embedded code is rewritten.',
+  );
+  $interpolation =
+    'function text(O $o): string { '.'return "__DIR__ $o->__FILE__"; }';
+  HH\invariant(
+    Str\contains(
+      HackCompiler\compile(
+        dict['text.hack' => $interpolation],
+        HackCompiler\CompileMode::SERVER,
+      ),
+      $interpolation,
+    ),
+    'Unbraced string interpolation must not become literal replacement text.',
+  );
+  $chain =
+    'function chain(C $c): mixed { '.'return $c->a(__FILE__)->b(__DIR__); }';
+  $server = HackCompiler\compile(
+    dict['chain.hack' => $chain],
+    HackCompiler\CompileMode::SERVER,
+  );
+  HH\invariant(
+    !Str\contains($server, 'a(__FILE__)') &&
+      !Str\contains($server, 'b(__DIR__)'),
+    'Arguments within chained calls must be rewritten.',
+  );
+  $constants = 'const string FILE = __FILE__; '.
+    'class Paths { public string $path = __DIR__; } '.
+    'enum PathsEnum: string { VALUE = __FILE__; } '.
+    '<<Attr(__DIR__)>> function defaults(string $path = __FILE__): void {} '.
+    "function shape_key(): mixed { return shape(__DIR__ => 'value'); }";
+  $server = HackCompiler\compile(
+    dict['constants.hack' => $constants],
+    HackCompiler\CompileMode::SERVER,
+  );
+  HH\invariant(
+    !Str\contains($server, '__FILE__') && !Str\contains($server, '__DIR__'),
+    'Constant expression contexts must also be rewritten.',
   );
   echo "Byte-level compiler checks passed.\n";
 }

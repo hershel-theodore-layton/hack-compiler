@@ -34,6 +34,7 @@ rm "$resource"
 if [ "$launch_mode" = daemon ]; then
   set -- -dhhvm.log.file=/dev/null
 fi
+export HACK_COMPILER_SERVER_FILE=$(realpath "$0")
 hhvm -m "$launch_mode" -p "$port" --no-config \
   -vServer.AllowRunAsRoot=1 \
   -dhhvm.repo.authoritative=true \

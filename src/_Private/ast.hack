@@ -173,7 +173,11 @@ function ast_token_text_start(AnyArray<arraykey, mixed> $token)[]: int {
 /** Token payloads in source order, excluding trivia. */
 function ast_tokens(
   AnyArray<arraykey, mixed> $node,
+  keyset<string> $excluded_kinds = keyset[],
 )[]: vec<AnyArray<arraykey, mixed>> {
+  if (C\contains($excluded_kinds, sub_string($node, 'kind'))) {
+    return vec[];
+  }
   switch (sub_string($node, 'kind')) {
     case 'token':
       return vec[sub_array($node, 'token')];
@@ -185,7 +189,10 @@ function ast_tokens(
     default:
       $children = Dict\filter_keys($node, $key ==> $key !== 'kind');
   }
-  return Vec\map($children, $child ==> ast_tokens($child as AnyArray<_, _>))
+  return Vec\map(
+    $children,
+    $child ==> ast_tokens($child as AnyArray<_, _>, $excluded_kinds),
+  )
     |> Vec\flatten($$);
 }
 

@@ -8,6 +8,10 @@ use function ini_get;
 <<__EntryPoint>>
 async function main_async()[defaults]: Awaitable<void> {
   $query = HH\global_get('_GET') as dict<_, _>;
+  if (idx($query, 'action') === 'paths') {
+    await IO\request_output()->writeAllAsync(__DIR__.'|'.__FILE__);
+    return;
+  }
   $response = idx($query, 'action') === 'identify-yourself'
     ? 'HTL\PhaLintersServer'
     : (ini_get('hhvm.repo.authoritative') === '1' ? 'compiled' : 'interpreted');
