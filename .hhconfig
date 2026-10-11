@@ -1,0 +1,8 @@
+; Formatting
+hackfmt.indent_width = 2
+hackfmt.line_width = 80
+hackfmt.tabs = false
+
+; Basic configuration
+check_xhp_attribute = true
+enable_strict_string_concat_interp = true

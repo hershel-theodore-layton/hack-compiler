@@ -1,0 +1,15 @@
+/** hack-compiler is MIT licensed, see /LICENSE. */
+namespace CompilerCheck\Server;
+
+use namespace HH;
+use namespace HH\Lib\IO;
+use function ini_get;
+
+<<__EntryPoint>>
+async function main_async()[defaults]: Awaitable<void> {
+  $query = HH\global_get('_GET') as dict<_, _>;
+  $response = idx($query, 'action') === 'identify-yourself'
+    ? 'HTL\PhaLintersServer'
+    : (ini_get('hhvm.repo.authoritative') === '1' ? 'compiled' : 'interpreted');
+  await IO\request_output()->writeAllAsync($response);
+}

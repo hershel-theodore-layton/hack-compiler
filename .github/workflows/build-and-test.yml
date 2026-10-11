@@ -1,0 +1,61 @@
+# Copyright (c) 2024, Hershel Theodore Layton
+# Copies of this file can be made, with or without changes,
+# under the terms of the MIT-0 license.
+
+name: Continuous Integration
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: "24 18 * * FRI"
+permissions:
+  contents: read
+jobs:
+  build:
+    name: HHVM ${{matrix.hhvm}}
+    strategy:
+      fail-fast: false
+      matrix:
+        hhvm:
+          - "4.153"
+          - "4.168"
+          - "25.6.0"
+          - "25.7.0"
+          - "25.11.0"
+          - "26.03.28"
+          - "26.06.05"
+          - "26.09.29"
+          - "beta"
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ startsWith(matrix.hhvm, '4') && format('hhvm/hhvm:{0}-latest', matrix.hhvm) || format('hersheltheodorelayton/hhvm-full:{0}', matrix.hhvm) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create branch for version alias
+        run: |
+          git config --global --add safe.directory $(pwd)
+          git checkout -b CI_current_pull_request
+      - uses: hershel-theodore-layton/actions/hack-lint-test@master
+        with:
+          hhvm: ${{matrix.hhvm}}
+          hhvm_flags: ${{ startsWith(matrix.hhvm, '4') && '-dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db' || '' }}
+          lint_engine: pha
+          skip_tests: true
+          typecheck_engine: strict
+      - name: Test compiler
+        run: |
+          # Restore test inputs and native autoload configuration after the package check.
+          git restore tests .hhvmconfig.hdf bin/hack-compiler.hack build.sh
+          mkdir -p .var
+          hhvm -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db tests/run.hack
+          hhvm -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db tests/write-source.hack
+          sh tests/namespace-contexts.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db
+          SERVER_TEST_PORT=$((10643 + $(printf '%s' '${{ matrix.hhvm }}' | cksum | cut -d ' ' -f1) % 1000)) sh tests/server-modes.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db
+          sh tests/cli-mode.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db
+          sh tests/typecheck.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db
+          sh tests/source-selection.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db
+          sh build.sh
+          git diff --exit-code -- bin/hack-compiler.sh
+          bin/hack-compiler.sh --mode resource --root src > .var/built-compiler.resource
+          hhvm -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db bin/hack-compiler.hack --mode resource --root src > .var/source-compiler.resource
+          cmp .var/source-compiler.resource .var/built-compiler.resource

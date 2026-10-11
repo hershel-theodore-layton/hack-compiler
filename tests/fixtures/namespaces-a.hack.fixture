@@ -1,0 +1,18 @@
+/** hack-compiler is MIT licensed, see /LICENSE. */
+namespace CompilerCheck\A;
+use namespace HH\Lib\Str as Helper;
+function text_length(string $text)[]: int {
+  return Helper\length($text);
+}
+
+namespace CompilerCheck\B;
+use namespace HH\Lib\Vec as Helper;
+function first_value(vec<int> $values)[]: int {
+  return Helper\take($values, 1)[0];
+}
+
+namespace CompilerCheck\A;
+use namespace HH\Lib\C as Helper;
+function item_count(vec<int> $values)[]: int {
+  return Helper\count($values);
+}

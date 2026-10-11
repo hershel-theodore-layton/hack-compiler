@@ -1,0 +1,5 @@
+.git/
+vendor/
+.var/
+.vscode/
+AGENTS.local.md

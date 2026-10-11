@@ -1,0 +1,19 @@
+/** hack-compiler is MIT licensed, see /LICENSE. */
+namespace CompilerCheck\CLI;
+
+use namespace HH;
+use namespace HH\Lib\{IO, Vec};
+use function getenv, ini_get, json_encode;
+
+<<__EntryPoint>>
+async function main_async()[defaults]: Awaitable<void> {
+  $input = await IO\request_input()->readAllAsync();
+  $result = json_encode(shape(
+    'args' => Vec\drop(HH\global_get('argv') as vec<_>, 1),
+    'environment' => getenv('HACK_COMPILER_CLI_TEST'),
+    'input' => $input,
+    'memory_limit' => ini_get('memory_limit'),
+  )) as string;
+  await IO\request_output()->writeAllAsync($result."\n");
+  exit((int)getenv('HACK_COMPILER_CLI_TEST_EXIT'));
+}

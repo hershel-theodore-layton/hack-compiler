@@ -1,0 +1,9 @@
+.github/ export-ignore
+tests/ export-ignore
+.hhconfig export-ignore
+.hhvmconfig.hdf export-ignore
+.dockerignore export-ignore
+docker-compose.yml export-ignore
+Dockerfile export-ignore
+bin/hack-compiler.hack export-ignore
+build.sh export-ignore

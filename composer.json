@@ -1,0 +1,15 @@
+{
+  "name": "hershel-theodore-layton/hack-compiler",
+  "description": "Hack Compiler",
+  "license": "MIT",
+  "require": {
+    "hhvm": ">=4.153"
+  },
+  "require-dev": {
+    "hershel-theodore-layton/portable-hack-ast-linters-server": ">=0.5.4 <1"
+  },
+  "bin": [
+    "bin/hack-compiler.sh",
+    "bin/hack-compiler-serve-resource.sh"
+  ]
+}

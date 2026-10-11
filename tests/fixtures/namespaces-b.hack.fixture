@@ -1,0 +1,20 @@
+/** hack-compiler is MIT licensed, see /LICENSE. */
+namespace CompilerCheck\B;
+use namespace HH\Lib\Str as Helper;
+function other_text_length(string $text)[]: int {
+  return Helper\length($text);
+}
+
+namespace CompilerCheck\Run;
+use namespace CompilerCheck\{A, B};
+<<__EntryPoint>>
+function main()[defaults]: void {
+  echo (string)A\text_length('abc').
+    '|'.
+    (string)B\first_value(vec[7, 8]).
+    '|'.
+    (string)A\item_count(vec[1, 2]).
+    '|'.
+    (string)B\other_text_length('four').
+    "\n";
+}
