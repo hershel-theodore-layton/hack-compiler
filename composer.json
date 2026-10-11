@@ -6,7 +6,7 @@
     "hhvm": ">=4.153"
   },
   "require-dev": {
-    "hershel-theodore-layton/portable-hack-ast-linters-server": ">=0.5.4 <1"
+    "hershel-theodore-layton/portable-hack-ast-linters-server": ">=0.6 <1"
   },
   "bin": [
     "bin/hack-compiler.sh",
