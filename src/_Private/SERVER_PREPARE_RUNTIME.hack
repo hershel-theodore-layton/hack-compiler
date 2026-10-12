@@ -3,6 +3,10 @@ namespace HTL\HackCompiler\_Private;
 
 const string SERVER_PREPARE_RUNTIME = <<<'SH'
 if [ "$launch_mode" = daemon ]; then
+  command -v curl > /dev/null || {
+    echo 'Daemon mode requires curl.' >&2
+    exit 1
+  }
   command -v setsid > /dev/null || {
     echo 'Daemon mode requires setsid.' >&2
     exit 1

@@ -7,6 +7,14 @@ use function ini_get;
 
 <<__EntryPoint>>
 async function main_async()[defaults]: Awaitable<void> {
+  $server = HH\global_get('_SERVER') as dict<_, _>;
+  if (idx($server, 'REQUEST_METHOD') === 'HEAD') {
+    // Readiness must wait for a response, and must accept non-2xx statuses.
+    \usleep(200000);
+    \file_put_contents('head-response', 'ready');
+    \http_response_code(405);
+    return;
+  }
   $query = HH\global_get('_GET') as dict<_, _>;
   if (idx($query, 'action') === 'pid') {
     await IO\request_output()->writeAllAsync((string)\getmypid());

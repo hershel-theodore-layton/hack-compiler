@@ -126,8 +126,10 @@ launcher_pid=
 test -z "$(find "$work_root" -name hhvm.hhbc -print)"
 test ! -d .var
 
+rm -f head-response
 sh ./server -d -p "$port" > server.log 2>&1
-wait_for_response compiled
+test "$(cat head-response)" = ready
+test "$(curl --fail --silent --max-time 1 "http://localhost:$port/")" = compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
 test -z "$(find "$work_root" -name hhvm.hhbc -print)"
 test ! -f "$work_root"/server.*/source.resource
@@ -136,8 +138,10 @@ stop_server
 # Legacy options still support VS Code setup.
 rm -rf "$work_root"
 script=./server-obsolete
+rm -f head-response
 sh "$script" -e -d -g -s -p "$port" > server.log 2>&1
-wait_for_response compiled
+test "$(cat head-response)" = ready
+test "$(curl --fail --silent --max-time 1 "http://localhost:$port/")" = compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
 test "$(curl --silent "http://localhost:$port/?action=paths")" = "$test_dir|$test_dir/server-obsolete"
 test -z "$(find "$work_root" -name hhvm.hhbc -print)"
@@ -159,8 +163,10 @@ wait "$launcher_pid" || true
 launcher_pid=
 test -z "$(find "$external_root" -name hhvm.hhbc -print)"
 
+rm -f head-response
 sh "$external_launcher" -b "$external" -g -d -p "$port" > server.log 2>&1
-wait_for_response compiled
+test "$(cat head-response)" = ready
+test "$(curl --fail --silent --max-time 1 "http://localhost:$port/")" = compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
 test -z "$(find "$external_root" -name hhvm.hhbc -print)"
 stop_server

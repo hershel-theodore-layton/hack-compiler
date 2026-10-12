@@ -33,7 +33,11 @@ while :; do
   if [ "$replace" = yes ]; then
     if handshake && [ "$handshake_instance" = "$nonce" ]; then break; fi
   elif [ -s "$work_dir/www.pid" ]; then
-    break
+    if [ "$launch_mode" != daemon ] ||
+       curl --noproxy '*' --silent --head --max-time 1 \
+         "http://127.0.0.1:$port/" > /dev/null; then
+      break
+    fi
   fi
   if ! kill -0 "$server_pid" 2>/dev/null; then
     wait "$server_pid"
