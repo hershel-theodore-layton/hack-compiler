@@ -26,7 +26,7 @@ vendor/bin/hack-compiler.sh --mode server --root src --root bin/server.hack \
   --typecheck > server.sh
 chmod +x server.sh
 ./server.sh -p 10641
-./server.sh -d -p 10641 # Return once the background server responds
+./server.sh -d -p 10641 # Run in the background instead
 ```
 
 ## Advanced usage
@@ -76,15 +76,7 @@ When compiling in server mode, the hack-compiler does a best-effort to make
 result in a parse error at start-up. `--typecheck` will inform you if your code
 has been mangled wrong.
 
-Daemon mode (`-d`) requires `setsid` and `curl` and waits until the server
-responds before returning successfully. Servers built with `--enable-self-update`
-use their instance handshake. Other servers, including external resources, receive
-a `HEAD /` request; any completed HTTP response counts, regardless of status.
-HHVM executes application code for this request, so the application should handle
-HEAD requests without side effects. Each probe has a one-second timeout and is
-retried without an overall deadline while the server process is alive. A HEAD
-handler that always takes longer than one second will keep the launcher waiting.
-Startup failures return a nonzero status.
+Daemon mode (`-d`) requires `curl` to be installed on the system.
 
 ## Servers that self update
 
