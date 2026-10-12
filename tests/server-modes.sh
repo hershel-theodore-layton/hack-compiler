@@ -188,7 +188,7 @@ for replacement in ./server-replace ./server-obsolete-replace; do
   for repeat in 1 2; do
     previous_pid=$server_pid
     sh "$replacement" -e -d -p "$port" > server.log 2>&1
-    wait_for_response compiled
+    test "$(curl --fail --silent --max-time 1 "http://localhost:$port/")" = compiled
     control
     test "$server_pid" != "$previous_pid"
     test ! -d "$work_root/$instance"

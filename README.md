@@ -82,7 +82,9 @@ use their instance handshake. Other servers, including external resources, recei
 a `HEAD /` request; any completed HTTP response counts, regardless of status.
 HHVM executes application code for this request, so the application should handle
 HEAD requests without side effects. Each probe has a one-second timeout and is
-retried while the server process is alive; startup failures return a nonzero status.
+retried without an overall deadline while the server process is alive. A HEAD
+handler that always takes longer than one second will keep the launcher waiting.
+Startup failures return a nonzero status.
 
 ## Servers that self update
 
