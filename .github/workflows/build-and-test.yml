@@ -39,7 +39,7 @@ jobs:
         with:
           hhvm: ${{matrix.hhvm}}
           hhvm_flags: ${{ startsWith(matrix.hhvm, '4') && '-dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db' || '' }}
-          lint_engine: pha
+          lint_engine: pha-server
           skip_tests: true
           typecheck_engine: strict
       - name: Test compiler
