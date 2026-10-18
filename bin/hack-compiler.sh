@@ -159,6 +159,18 @@ eval "set -- $hack_compiler_cli_hhvm_arguments \"\$hack_compiler_cli_directory/s
 hhvm "$@"
 SH;
 
+///// src/_Private/COMPRESSED_EXTRACT.hack /////
+namespace HTL\HackCompiler\_Private;
+/** hack-compiler is MIT licensed, see /LICENSE. */
+
+const string COMPRESSED_EXTRACT = <<<'SH'
+
+# Extract the embedded gzip stream without starting another HHVM process.
+hack_compiler_extract() {
+  tail -n +__SOURCE_LINE__ "$1" | gzip -dc > "$2"
+}
+SH;
+
 ///// src/_Private/OBSOLETE_SERVER_OPTIONS.hack /////
 namespace HTL\HackCompiler\_Private;
 /** hack-compiler is MIT licensed, see /LICENSE. */
@@ -705,11 +717,12 @@ async function cli_async()[defaults]: Awaitable<void> {
   $output = IO\request_output();
   if (C\is_empty($args) || $args[0] === '--help') {
     await $output->writeAllAsync(
-      "Usage: hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--enable-self-update]\n".
+      "Usage: hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--compressed] [--enable-self-update]\n".
       "Modes: resource, cli, server, server-obsolete.\n".
       "Roots select files or directories of .hack files recursively.\n".
       "Paths are sorted relative to the current directory.\n".
       "--typecheck checks the compiled resource before emitting output.\n".
+      "--compressed compresses embedded source; launchers require gzip.\n".
       "--enable-self-update enables handshake-based replacement in server modes.\n".
       "The output is written to stdout.\n",
     );
@@ -722,9 +735,15 @@ async function cli_async()[defaults]: Awaitable<void> {
     $mode = null;
     $typecheck = false;
     $replace = false;
+    $compressed = false;
     while (!C\is_empty($args)) {
       if ($args[0] === '--enable-self-update') {
         $replace = true;
+        $args = Vec\drop($args, 1);
+        continue;
+      }
+      if ($args[0] === '--compressed') {
+        $compressed = true;
         $args = Vec\drop($args, 1);
         continue;
       }
@@ -766,6 +785,7 @@ async function cli_async()[defaults]: Awaitable<void> {
       $mode,
       $typecheck,
       $replace,
+      $compressed,
     );
     await $output->writeAllAsync($compiled);
   } catch (Exception $e) {
@@ -1088,8 +1108,14 @@ function compile(
   dict<string, string> $sources,
   CompileMode $mode,
   bool $replace = false,
+  bool $compressed = false,
 )[]: string {
-  return wrap_resource(_Private\compile_resource($sources), $mode, $replace);
+  return wrap_resource(
+    _Private\compile_resource($sources),
+    $mode,
+    $replace,
+    $compressed,
+  );
 }
 
 ///// src/compile_roots_async.hack /////
@@ -1106,6 +1132,7 @@ async function compile_roots_async(
   CompileMode $mode,
   bool $typecheck = false,
   bool $replace = false,
+  bool $compressed = false,
 )[defaults]: Awaitable<string> {
   invariant(
     C\every(
@@ -1129,7 +1156,7 @@ async function compile_roots_async(
       _Private\prepare_server_resource($resource, $mode, $replace),
     );
   }
-  return wrap_resource($resource, $mode, $replace);
+  return wrap_resource($resource, $mode, $replace, $compressed);
 }
 
 ///// src/process_source_file_async.hack /////
@@ -1181,13 +1208,19 @@ namespace HTL\HackCompiler;
 /** hack-compiler is MIT licensed, see /LICENSE. */
 
 use namespace HH\Lib\{C, Str};
+use function gzencode;
 
 /** Wrap an already compiled resource for the selected output mode. */
 function wrap_resource(
   string $resource,
   CompileMode $mode,
   bool $replace = false,
+  bool $compressed = false,
 )[]: string {
+  invariant(
+    !$compressed || $mode !== CompileMode::RESOURCE,
+    '--compressed requires a shell launcher mode (cli, server, server-obsolete).',
+  );
   $resource = _Private\prepare_server_resource($resource, $mode, $replace);
   switch ($mode) {
     case CompileMode::RESOURCE:
@@ -1211,6 +1244,20 @@ function wrap_resource(
       "\n".
       ($replace ? _Private\SERVER_REPLACE_RUNTIME."\n" : '').
       _Private\SERVER_RUNTIME;
+  }
+  if ($compressed) {
+    // The shell exits before parsing the binary payload.
+    $header = Str\replace(
+      $header,
+      'tail -n +__SOURCE_LINE__ "$0" > ',
+      'hack_compiler_extract "$0" ',
+    );
+    $header = Str\replace(
+      $header,
+      'set -eu',
+      "set -eu\n"._Private\COMPRESSED_EXTRACT,
+    );
+    $resource = gzencode($resource, 9) as string;
   }
   $header .= "\nexit 0\n__HACK_COMPILER_RESOURCE__\n";
   $source_line = C\count(Str\split($header, "\n"));

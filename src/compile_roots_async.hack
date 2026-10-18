@@ -11,6 +11,7 @@ async function compile_roots_async(
   CompileMode $mode,
   bool $typecheck = false,
   bool $replace = false,
+  bool $compressed = false,
 )[defaults]: Awaitable<string> {
   invariant(
     C\every(
@@ -34,5 +35,5 @@ async function compile_roots_async(
       _Private\prepare_server_resource($resource, $mode, $replace),
     );
   }
-  return wrap_resource($resource, $mode, $replace);
+  return wrap_resource($resource, $mode, $replace, $compressed);
 }

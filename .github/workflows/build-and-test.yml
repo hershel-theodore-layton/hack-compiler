@@ -51,6 +51,7 @@ jobs:
           hhvm -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db tests/write-source.hack
           sh tests/namespace-contexts.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db
           SERVER_TEST_PORT=$((10643 + $(printf '%s' '${{ matrix.hhvm }}' | cksum | cut -d ' ' -f1) % 1000)) sh tests/server-modes.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db
+          HACK_COMPILER_TEST_COMPRESSED=--compressed SERVER_TEST_PORT=$((10643 + $(printf '%s' '${{ matrix.hhvm }}' | cksum | cut -d ' ' -f1) % 1000)) sh tests/server-modes.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db
           sh tests/cli-mode.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db
           sh tests/typecheck.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db
           sh tests/source-selection.sh -dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db

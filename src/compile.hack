@@ -6,6 +6,12 @@ function compile(
   dict<string, string> $sources,
   CompileMode $mode,
   bool $replace = false,
+  bool $compressed = false,
 )[]: string {
-  return wrap_resource(_Private\compile_resource($sources), $mode, $replace);
+  return wrap_resource(
+    _Private\compile_resource($sources),
+    $mode,
+    $replace,
+    $compressed,
+  );
 }

@@ -13,11 +13,12 @@ async function cli_async()[defaults]: Awaitable<void> {
   $output = IO\request_output();
   if (C\is_empty($args) || $args[0] === '--help') {
     await $output->writeAllAsync(
-      "Usage: hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--enable-self-update]\n".
+      "Usage: hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--compressed] [--enable-self-update]\n".
       "Modes: resource, cli, server, server-obsolete.\n".
       "Roots select files or directories of .hack files recursively.\n".
       "Paths are sorted relative to the current directory.\n".
       "--typecheck checks the compiled resource before emitting output.\n".
+      "--compressed compresses embedded source; launchers require gzip.\n".
       "--enable-self-update enables handshake-based replacement in server modes.\n".
       "The output is written to stdout.\n",
     );
@@ -30,9 +31,15 @@ async function cli_async()[defaults]: Awaitable<void> {
     $mode = null;
     $typecheck = false;
     $replace = false;
+    $compressed = false;
     while (!C\is_empty($args)) {
       if ($args[0] === '--enable-self-update') {
         $replace = true;
+        $args = Vec\drop($args, 1);
+        continue;
+      }
+      if ($args[0] === '--compressed') {
+        $compressed = true;
         $args = Vec\drop($args, 1);
         continue;
       }
@@ -74,6 +81,7 @@ async function cli_async()[defaults]: Awaitable<void> {
       $mode,
       $typecheck,
       $replace,
+      $compressed,
     );
     await $output->writeAllAsync($compiled);
   } catch (Exception $e) {

@@ -46,7 +46,7 @@ vendor/bin/hack-compiler-serve-resource.sh -b ./server.resource -d -p 10641
 ## CLI
 
 ```CLI
-hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck]
+hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--compressed]
 hack-compiler-serve-resource.sh -b PATH [-p PORT] [-g] [-d]
 
 --mode MODE           Required: resource, cli, server, or server-obsolete.
@@ -54,6 +54,8 @@ hack-compiler-serve-resource.sh -b PATH [-p PORT] [-g] [-d]
                       from a directory. May be repeated; overlaps are deduplicated.
 --exclude PREFIX      Skip paths starting with this prefix. May be repeated.
 --typecheck           Check the combined source with hh_server before emitting it.
+--compressed          Compress embedded source in cli/server/server-obsolete modes.
+                      Requires gzip at runtime.
 --enable-self-update  Allow another server to replace a running one.
 --help                Show usage.
 

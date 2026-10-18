@@ -27,17 +27,26 @@ trap cleanup 0
 trap 'exit 1' HUP INT TERM
 
 for mode in resource server server-obsolete; do
-  hhvm "$@" bin/hack-compiler.hack --mode "$mode" \
+  compression_option=${HACK_COMPILER_TEST_COMPRESSED:-}
+  if [ "$mode" = resource ]; then compression_option=; fi
+  hhvm "$@" bin/hack-compiler.hack $compression_option --mode "$mode" \
     --root tests/fixtures/server.hack.fixture > "$test_dir/$mode"
 done
 for mode in server server-obsolete; do
-  hhvm "$@" bin/hack-compiler.hack --mode "$mode" --enable-self-update --typecheck \
+  hhvm "$@" bin/hack-compiler.hack ${HACK_COMPILER_TEST_COMPRESSED:-} --mode "$mode" --enable-self-update --typecheck \
     --root tests/fixtures/server.hack.fixture > "$test_dir/$mode-replace"
 done
 # Both server modes embed the same rewritten resource.
 for mode in server server-obsolete; do
   line=$(awk '/^__HACK_COMPILER_RESOURCE__$/ { print NR + 1; exit }' "$test_dir/$mode")
-  tail -n +"$line" "$test_dir/$mode" > "$test_dir/extracted.resource"
+  if [ -n "${HACK_COMPILER_TEST_COMPRESSED:-}" ]; then
+    # Use the launcher's extraction helper without starting a server.
+    sed -n '/^hack_compiler_extract() {$/,/^}$/p' "$test_dir/$mode" > "$test_dir/extract.sh"
+    sh -c '. "$1"; hack_compiler_extract "$2" "$3"' sh \
+      "$test_dir/extract.sh" "$test_dir/$mode" "$test_dir/extracted.resource"
+  else
+    tail -n +"$line" "$test_dir/$mode" > "$test_dir/extracted.resource"
+  fi
   if [ "$mode" = server ]; then
     cp "$test_dir/extracted.resource" "$test_dir/server.resource"
   else
@@ -197,11 +206,17 @@ for replacement in ./server-replace ./server-obsolete-replace; do
   done
 done
 cp ./server-replace invalid-replace
-printf '\nthis is invalid Hack;\n' >> invalid-replace
+if [ -n "${HACK_COMPILER_TEST_COMPRESSED:-}" ]; then
+  printf '\nthis is invalid Hack;\n' | gzip -c >> invalid-replace
+else
+  printf '\nthis is invalid Hack;\n' >> invalid-replace
+fi
 if sh ./invalid-replace -d -p "$port" > invalid.log 2>&1; then
   echo 'A failed compilation must leave the previous server running.' >&2
   exit 1
 fi
+# Extraction succeeded and the invalid source reached HHVM's syntax check.
+grep -qi 'unexpected token' invalid.log
 previous_pid=$server_pid
 wait_for_response compiled
 control
