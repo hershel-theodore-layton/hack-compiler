@@ -20,6 +20,12 @@ async function main_async()[defaults]: Awaitable<void> {
     await IO\request_output()->writeAllAsync((string)\getmypid());
     return;
   }
+  if (idx($query, 'action') === 'options') {
+    await IO\request_output()->writeAllAsync(
+      (string)ini_get('user_agent').'|'.(string)ini_get('memory_limit'),
+    );
+    return;
+  }
   if (idx($query, 'action') === 'paths') {
     await IO\request_output()->writeAllAsync(__DIR__.'|'.__FILE__);
     return;

@@ -5,6 +5,8 @@ const string SERVER_OPTIONS = <<<'SH'
 #!/bin/sh
 set -eu
 
+__SERVER_ARGUMENTS__
+
 port=10641
 launch_mode=server
 bundled=yes
@@ -13,11 +15,11 @@ legacy=no
 trusted=yes
 while getopts ':hdep:' option; do
   case "$option" in
-    h) echo "Usage: $0 [-d] [-e] [-p PORT]"; exit 0 ;;
+    h) echo "Usage: $0 [-d] [-e] [-p PORT] [--hhvm-args OPTIONS [--]]"; exit 0 ;;
     d) launch_mode=daemon ;;
     e) ;;
     p) port=$OPTARG ;;
-    *) echo "Usage: $0 [-d] [-e] [-p PORT]" >&2; exit 1 ;;
+    *) echo "Usage: $0 [-d] [-e] [-p PORT] [--hhvm-args OPTIONS [--]]" >&2; exit 1 ;;
   esac
 done
 shift "$((OPTIND - 1))"

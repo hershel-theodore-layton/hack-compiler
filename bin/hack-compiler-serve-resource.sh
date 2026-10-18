@@ -3,6 +3,34 @@
 # hack-compiler is MIT licensed, see /LICENSE.
 set -eu
 
+# Quote each argument before rebuilding the two argument lists in POSIX sh.
+hack_compiler_server_quote() {
+  hack_compiler_server_value=$1
+  printf "'"
+  while case "$hack_compiler_server_value" in *\'*) true ;; *) false ;; esac; do
+    printf '%s' "${hack_compiler_server_value%%\'*}" "'\\''"
+    hack_compiler_server_value=${hack_compiler_server_value#*\'}
+  done
+  printf "%s' " "$hack_compiler_server_value"
+}
+
+hack_compiler_server_mode=launcher
+hack_compiler_server_hhvm_arguments=
+hack_compiler_server_launcher_arguments=
+for hack_compiler_server_argument in "$@"; do
+  case "$hack_compiler_server_mode:$hack_compiler_server_argument" in
+    launcher:--hhvm-args) hack_compiler_server_mode=hhvm ;;
+    hhvm:--) hack_compiler_server_mode=remaining ;;
+    hhvm:*)
+      hack_compiler_server_hhvm_arguments="$hack_compiler_server_hhvm_arguments$(hack_compiler_server_quote "$hack_compiler_server_argument")"
+      ;;
+    *)
+      hack_compiler_server_launcher_arguments="$hack_compiler_server_launcher_arguments$(hack_compiler_server_quote "$hack_compiler_server_argument")"
+      ;;
+  esac
+done
+eval "set -- $hack_compiler_server_launcher_arguments"
+
 port=10641
 replace=no
 launch_mode=server
@@ -15,7 +43,7 @@ option_error() {
 }
 
 usage() {
-  echo "Usage: $0 [-p PORT] [-d] -b PATH"
+  echo "Usage: $0 [-p PORT] [-d] -b PATH [--hhvm-args OPTIONS [--]]"
   echo '  -b, -r PATH  Select the resource to run.'
   echo '  -d  Run as a daemon.'
 }
@@ -74,6 +102,7 @@ if [ "$launch_mode" = daemon ]; then
   }
   set -- "$@" -dhhvm.log.file=/dev/null
 fi
+eval "set -- \"\$@\" $hack_compiler_server_hhvm_arguments"
 if [ "$replace" = no ]; then
   set -- "$@" "-dhhvm.pid_file=$work_dir/www.pid"
 fi

@@ -108,11 +108,23 @@ services:
       - 48568:$port
 YAML
 
+# Exercise quoting without allowing shell expansion of the supplied value.
+server_option="O'Reilly \$(touch injected)
+second line"
+launch_with_options() {
+  sh "$@" --hhvm-args "-duser_agent=\"$server_option\"" -dmemory_limit=256M --
+}
+check_options() {
+  test "$(curl --fail --silent "http://localhost:$port/?action=options")" = "$server_option|268435456"
+  test ! -e injected
+}
+
 cd "$test_dir"
-sh ./server -e -p "$port" > server.log 2>&1 &
+sh ./server --hhvm-args "-duser_agent=\"$server_option\"" -dmemory_limit=256M -- -e -p "$port" > server.log 2>&1 &
 launcher_pid=$!
 wait_for_response compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
+check_options
 test "$(curl --silent "http://localhost:$port/?action=paths")" = "$test_dir|$test_dir/server"
 test ! -f "$work_root"/server.*/source.resource
 # An ordinary relaunch fails promptly without disturbing the running server.
@@ -136,10 +148,11 @@ test -z "$(find "$work_root" -name hhvm.hhbc -print)"
 test ! -d .var
 
 rm -f head-response
-sh ./server -d -p "$port" > server.log 2>&1
+launch_with_options ./server -d -p "$port" > server.log 2>&1
 test "$(cat head-response)" = ready
 test "$(curl --fail --silent --max-time 1 "http://localhost:$port/")" = compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
+check_options
 test -z "$(find "$work_root" -name hhvm.hhbc -print)"
 test ! -f "$work_root"/server.*/source.resource
 stop_server
@@ -148,10 +161,11 @@ stop_server
 rm -rf "$work_root"
 script=./server-obsolete
 rm -f head-response
-sh "$script" -e -d -g -s -p "$port" > server.log 2>&1
+launch_with_options "$script" -e -d -g -s -p "$port" > server.log 2>&1
 test "$(cat head-response)" = ready
 test "$(curl --fail --silent --max-time 1 "http://localhost:$port/")" = compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
+check_options
 test "$(curl --silent "http://localhost:$port/?action=paths")" = "$test_dir|$test_dir/server-obsolete"
 test -z "$(find "$work_root" -name hhvm.hhbc -print)"
 test ! -f "$work_root"/server.*/source.resource
@@ -163,20 +177,22 @@ stop_server
 external_root="$TMPDIR/hack-compiler-serve-resource"
 cp resource portable-hack-ast-linters-server-bundled.resource
 external=./portable-hack-ast-linters-server-bundled.resource
-sh "$external_launcher" -r "$test_dir/portable-hack-ast-linters-server-bundled.resource" -p "$port" > server.log 2>&1 &
+launch_with_options "$external_launcher" -r "$test_dir/portable-hack-ast-linters-server-bundled.resource" -p "$port" > server.log 2>&1 &
 launcher_pid=$!
 wait_for_response compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
+check_options
 stop_server
 wait "$launcher_pid" || true
 launcher_pid=
 test -z "$(find "$external_root" -name hhvm.hhbc -print)"
 
 rm -f head-response
-sh "$external_launcher" -b "$external" -g -d -p "$port" > server.log 2>&1
+launch_with_options "$external_launcher" -b "$external" -g -d -p "$port" > server.log 2>&1
 test "$(cat head-response)" = ready
 test "$(curl --fail --silent --max-time 1 "http://localhost:$port/")" = compiled
 server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
+check_options
 test -z "$(find "$external_root" -name hhvm.hhbc -print)"
 stop_server
 # Both replacement modes replace identical launches and each other, without PID files.
@@ -196,9 +212,10 @@ control() {
 for replacement in ./server-replace ./server-obsolete-replace; do
   for repeat in 1 2; do
     previous_pid=$server_pid
-    sh "$replacement" -e -d -p "$port" > server.log 2>&1
+    launch_with_options "$replacement" -e -d -p "$port" > server.log 2>&1
     test "$(curl --fail --silent --max-time 1 "http://localhost:$port/")" = compiled
     control
+    check_options
     test "$server_pid" != "$previous_pid"
     test ! -d "$work_root/$instance"
     test ! -f "$work_root/$instance/www.pid"
@@ -230,10 +247,11 @@ done
 test ! -d "$work_root/$instance"
 
 # Foreground replacement removes its repository while still serving.
-sh ./server-replace -p "$port" > server.log 2>&1 &
+launch_with_options ./server-replace -p "$port" > server.log 2>&1 &
 launcher_pid=$!
 wait_for_response compiled
 control
+check_options
 test ! -d "$work_root/$instance"
 stop_server
 wait "$launcher_pid" || true

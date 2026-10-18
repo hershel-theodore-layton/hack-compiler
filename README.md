@@ -67,7 +67,7 @@ server                Embed source in a server launcher. Supports -d and -p PORT
 server-obsolete       Preserve the legacy Linters Server launcher. Pass -e to use
                       embedded source; -b PATH selects an external resource.
 
-CLI launchers:        --hhvm-args starts HHVM options; -- resumes script arguments.
+All launchers:        --hhvm-args starts HHVM options; -- resumes script arguments.
                       Without --hhvm-args, all arguments go to the script.
 ```
 

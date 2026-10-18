@@ -178,6 +178,8 @@ namespace HTL\HackCompiler\_Private;
 const string OBSOLETE_SERVER_OPTIONS = <<<'SH'
 #!/bin/sh
 set -eu
+
+__SERVER_ARGUMENTS__
 replace=no
 legacy=yes
 
@@ -189,7 +191,7 @@ trusted=no
 resource=
 
 usage() {
-  echo "Usage: $0 [-p PORT] [-s] [-d] [-t] [-e | -b PATH | -r PATH]"
+  echo "Usage: $0 [-p PORT] [-s] [-d] [-t] [-e | -b PATH | -r PATH] [--hhvm-args OPTIONS [--]]"
   echo '  -e  Use the resource embedded in this script.'
   echo '  -b, -r PATH  Use and trust an external resource.'
   echo '  -s  Set up VS Code for Docker Native development.'
@@ -267,6 +269,40 @@ JSON
 fi
 SH;
 
+///// src/_Private/SERVER_ARGUMENTS.hack /////
+namespace HTL\HackCompiler\_Private;
+/** hack-compiler is MIT licensed, see /LICENSE. */
+
+const string SERVER_ARGUMENTS = <<<'SH'
+# Quote each argument before rebuilding the two argument lists in POSIX sh.
+hack_compiler_server_quote() {
+  hack_compiler_server_value=$1
+  printf "'"
+  while case "$hack_compiler_server_value" in *\'*) true ;; *) false ;; esac; do
+    printf '%s' "${hack_compiler_server_value%%\'*}" "'\\''"
+    hack_compiler_server_value=${hack_compiler_server_value#*\'}
+  done
+  printf "%s' " "$hack_compiler_server_value"
+}
+
+hack_compiler_server_mode=launcher
+hack_compiler_server_hhvm_arguments=
+hack_compiler_server_launcher_arguments=
+for hack_compiler_server_argument in "$@"; do
+  case "$hack_compiler_server_mode:$hack_compiler_server_argument" in
+    launcher:--hhvm-args) hack_compiler_server_mode=hhvm ;;
+    hhvm:--) hack_compiler_server_mode=remaining ;;
+    hhvm:*)
+      hack_compiler_server_hhvm_arguments="$hack_compiler_server_hhvm_arguments$(hack_compiler_server_quote "$hack_compiler_server_argument")"
+      ;;
+    *)
+      hack_compiler_server_launcher_arguments="$hack_compiler_server_launcher_arguments$(hack_compiler_server_quote "$hack_compiler_server_argument")"
+      ;;
+  esac
+done
+eval "set -- $hack_compiler_server_launcher_arguments"
+SH;
+
 ///// src/_Private/SERVER_OPTIONS.hack /////
 namespace HTL\HackCompiler\_Private;
 /** hack-compiler is MIT licensed, see /LICENSE. */
@@ -274,6 +310,8 @@ namespace HTL\HackCompiler\_Private;
 const string SERVER_OPTIONS = <<<'SH'
 #!/bin/sh
 set -eu
+
+__SERVER_ARGUMENTS__
 
 port=10641
 launch_mode=server
@@ -283,11 +321,11 @@ legacy=no
 trusted=yes
 while getopts ':hdep:' option; do
   case "$option" in
-    h) echo "Usage: $0 [-d] [-e] [-p PORT]"; exit 0 ;;
+    h) echo "Usage: $0 [-d] [-e] [-p PORT] [--hhvm-args OPTIONS [--]]"; exit 0 ;;
     d) launch_mode=daemon ;;
     e) ;;
     p) port=$OPTARG ;;
-    *) echo "Usage: $0 [-d] [-e] [-p PORT]" >&2; exit 1 ;;
+    *) echo "Usage: $0 [-d] [-e] [-p PORT] [--hhvm-args OPTIONS [--]]" >&2; exit 1 ;;
   esac
 done
 shift "$((OPTIND - 1))"
@@ -414,6 +452,7 @@ const string SERVER_RUNTIME = <<<'SH'
 if [ "$launch_mode" = daemon ]; then
   set -- "$@" -dhhvm.log.file=/dev/null
 fi
+eval "set -- \"\$@\" $hack_compiler_server_hhvm_arguments"
 if [ "$replace" = no ]; then
   set -- "$@" "-dhhvm.pid_file=$work_dir/www.pid"
 fi
@@ -1236,6 +1275,7 @@ function wrap_resource(
       break;
   }
   if ($mode === CompileMode::SERVER || $mode === CompileMode::SERVER_OBSOLETE) {
+    $header = Str\replace($header, '__SERVER_ARGUMENTS__', _Private\SERVER_ARGUMENTS);
     if ($replace) {
       $header = Str\replace($header, 'replace=no', 'replace=yes');
     }

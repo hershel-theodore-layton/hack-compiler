@@ -4,6 +4,8 @@ namespace HTL\HackCompiler\_Private;
 const string OBSOLETE_SERVER_OPTIONS = <<<'SH'
 #!/bin/sh
 set -eu
+
+__SERVER_ARGUMENTS__
 replace=no
 legacy=yes
 
@@ -15,7 +17,7 @@ trusted=no
 resource=
 
 usage() {
-  echo "Usage: $0 [-p PORT] [-s] [-d] [-t] [-e | -b PATH | -r PATH]"
+  echo "Usage: $0 [-p PORT] [-s] [-d] [-t] [-e | -b PATH | -r PATH] [--hhvm-args OPTIONS [--]]"
   echo '  -e  Use the resource embedded in this script.'
   echo '  -b, -r PATH  Use and trust an external resource.'
   echo '  -s  Set up VS Code for Docker Native development.'

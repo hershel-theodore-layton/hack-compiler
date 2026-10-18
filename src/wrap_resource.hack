@@ -30,6 +30,7 @@ function wrap_resource(
       break;
   }
   if ($mode === CompileMode::SERVER || $mode === CompileMode::SERVER_OBSOLETE) {
+    $header = Str\replace($header, '__SERVER_ARGUMENTS__', _Private\SERVER_ARGUMENTS);
     if ($replace) {
       $header = Str\replace($header, 'replace=no', 'replace=yes');
     }

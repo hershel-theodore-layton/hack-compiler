@@ -5,6 +5,7 @@ const string SERVER_RUNTIME = <<<'SH'
 if [ "$launch_mode" = daemon ]; then
   set -- "$@" -dhhvm.log.file=/dev/null
 fi
+eval "set -- \"\$@\" $hack_compiler_server_hhvm_arguments"
 if [ "$replace" = no ]; then
   set -- "$@" "-dhhvm.pid_file=$work_dir/www.pid"
 fi
