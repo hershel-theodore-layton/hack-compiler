@@ -28,6 +28,52 @@ async function main_async()[defaults]: Awaitable<void> {
       ),
     'Function directive signature differs.',
   );
+  foreach (vec['', "namespace Example;\n"] as $preamble) {
+    invariant(
+      HackCompiler\prepare_signing_preamble($preamble) ===
+        $preamble.
+        "\nuse type HTL\\Pragma\\Pragmas;\n".
+        "\n<<file: Pragmas(vec['PhaLinters', 'digest:'])>>\n",
+      'The import must precede a new attribute.',
+    );
+  }
+  $unimported =
+    "namespace Example;\n"."<<file: Pragmas(vec['Other', 'keep'])>>\n";
+  invariant(
+    HackCompiler\prepare_signing_preamble($unimported) ===
+      "namespace Example;\n\nuse type HTL\\Pragma\\Pragmas;\n".
+      "<<file: Pragmas(vec['PhaLinters', 'digest:'], vec['Other', 'keep'])>>\n",
+    'The import must precede an existing attribute.',
+  );
+  foreach (
+    vec[
+      '',
+      "namespace Example;\n// Pragmas( and 'digest:' are documentation",
+      "namespace Example;\nconst string DOC = \"Pragmas( 'digest:'\";",
+      "namespace Example;\nuse type HTL\\Pragma\\Pragmas;\n".
+      '<<file: Pragmas()>>',
+      "namespace Example;\nuse type HTL\\Pragma\\Pragmas;\n".
+      "<<file: Pragmas(/* keep */ vec['Other', 'keep'])>>",
+      $source,
+      Str\replace(
+        $source,
+        "'PhaLinters', 'digest:'",
+        '"PhaLinters", "digest:"',
+      ),
+    ] as $preamble
+  ) {
+    $prepared = HackCompiler\prepare_signing_preamble($preamble);
+    invariant(
+      HackCompiler\prepare_signing_preamble($prepared) === $prepared,
+      'Preparing a preamble must be idempotent.',
+    );
+    $signed = HackCompiler\sign_source($prepared);
+    invariant($signed !== $prepared, 'Prepared preamble must be signable.');
+    invariant(
+      HackCompiler\prepare_signing_preamble($signed) === $signed,
+      'Preparing a preamble must preserve an existing signature.',
+    );
+  }
   using $destination = File\temporary_file();
   $path = $destination->getHandle()->getPath();
   await HackCompiler\write_source_async($source, $path);
