@@ -22,13 +22,18 @@ hack_compiler_cli_quote() {
 }
 
 hack_compiler_cli_mode=script
-hack_compiler_cli_hhvm_arguments=
+hack_compiler_cli_hhvm_arguments=__DEFAULT_HHVM_ARGUMENTS__
+hack_compiler_cli_has_hhvm_arguments=no
 hack_compiler_cli_script_arguments=
 for hack_compiler_cli_argument in "$@"; do
   case "$hack_compiler_cli_mode:$hack_compiler_cli_argument" in
     script:--hhvm-args) hack_compiler_cli_mode=hhvm ;;
     hhvm:--) hack_compiler_cli_mode=remaining ;;
     hhvm:*)
+      if [ "$hack_compiler_cli_has_hhvm_arguments" = no ]; then
+        hack_compiler_cli_hhvm_arguments=
+        hack_compiler_cli_has_hhvm_arguments=yes
+      fi
       hack_compiler_cli_hhvm_arguments="$hack_compiler_cli_hhvm_arguments$(hack_compiler_cli_quote "$hack_compiler_cli_argument")"
       ;;
     *)

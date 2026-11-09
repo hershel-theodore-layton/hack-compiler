@@ -7,11 +7,13 @@ function compile(
   CompileMode $mode,
   bool $replace = false,
   bool $compressed = false,
+  vec<string> $default_hhvm_args = vec[],
 )[]: string {
   return wrap_resource(
     _Private\compile_resource($sources),
     $mode,
     $replace,
     $compressed,
+    $default_hhvm_args,
   );
 }

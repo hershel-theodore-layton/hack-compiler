@@ -4,7 +4,7 @@ set -eu
 hack_compiler_cli_directory=$(mktemp -d "${TMPDIR:-/tmp}/hack-compiler-cli.XXXXXX")
 trap 'rm -rf "$hack_compiler_cli_directory"' 0
 trap 'exit 1' HUP INT TERM
-tail -n +39 "$0" > "$hack_compiler_cli_directory/source.resource"
+tail -n +44 "$0" > "$hack_compiler_cli_directory/source.resource"
 
 # Quote each argument before rebuilding the two argument lists in POSIX sh.
 hack_compiler_cli_quote() {
@@ -18,13 +18,18 @@ hack_compiler_cli_quote() {
 }
 
 hack_compiler_cli_mode=script
-hack_compiler_cli_hhvm_arguments=
+hack_compiler_cli_hhvm_arguments=''
+hack_compiler_cli_has_hhvm_arguments=no
 hack_compiler_cli_script_arguments=
 for hack_compiler_cli_argument in "$@"; do
   case "$hack_compiler_cli_mode:$hack_compiler_cli_argument" in
     script:--hhvm-args) hack_compiler_cli_mode=hhvm ;;
     hhvm:--) hack_compiler_cli_mode=remaining ;;
     hhvm:*)
+      if [ "$hack_compiler_cli_has_hhvm_arguments" = no ]; then
+        hack_compiler_cli_hhvm_arguments=
+        hack_compiler_cli_has_hhvm_arguments=yes
+      fi
       hack_compiler_cli_hhvm_arguments="$hack_compiler_cli_hhvm_arguments$(hack_compiler_cli_quote "$hack_compiler_cli_argument")"
       ;;
     *)
@@ -141,13 +146,18 @@ hack_compiler_cli_quote() {
 }
 
 hack_compiler_cli_mode=script
-hack_compiler_cli_hhvm_arguments=
+hack_compiler_cli_hhvm_arguments=__DEFAULT_HHVM_ARGUMENTS__
+hack_compiler_cli_has_hhvm_arguments=no
 hack_compiler_cli_script_arguments=
 for hack_compiler_cli_argument in "$@"; do
   case "$hack_compiler_cli_mode:$hack_compiler_cli_argument" in
     script:--hhvm-args) hack_compiler_cli_mode=hhvm ;;
     hhvm:--) hack_compiler_cli_mode=remaining ;;
     hhvm:*)
+      if [ "$hack_compiler_cli_has_hhvm_arguments" = no ]; then
+        hack_compiler_cli_hhvm_arguments=
+        hack_compiler_cli_has_hhvm_arguments=yes
+      fi
       hack_compiler_cli_hhvm_arguments="$hack_compiler_cli_hhvm_arguments$(hack_compiler_cli_quote "$hack_compiler_cli_argument")"
       ;;
     *)
@@ -286,13 +296,18 @@ hack_compiler_server_quote() {
 }
 
 hack_compiler_server_mode=launcher
-hack_compiler_server_hhvm_arguments=
+hack_compiler_server_hhvm_arguments=__DEFAULT_HHVM_ARGUMENTS__
+hack_compiler_server_has_hhvm_arguments=no
 hack_compiler_server_launcher_arguments=
 for hack_compiler_server_argument in "$@"; do
   case "$hack_compiler_server_mode:$hack_compiler_server_argument" in
     launcher:--hhvm-args) hack_compiler_server_mode=hhvm ;;
     hhvm:--) hack_compiler_server_mode=remaining ;;
     hhvm:*)
+      if [ "$hack_compiler_server_has_hhvm_arguments" = no ]; then
+        hack_compiler_server_hhvm_arguments=
+        hack_compiler_server_has_hhvm_arguments=yes
+      fi
       hack_compiler_server_hhvm_arguments="$hack_compiler_server_hhvm_arguments$(hack_compiler_server_quote "$hack_compiler_server_argument")"
       ;;
     *)
@@ -756,13 +771,14 @@ async function cli_async()[defaults]: Awaitable<void> {
   $output = IO\request_output();
   if (C\is_empty($args) || $args[0] === '--help') {
     await $output->writeAllAsync(
-      "Usage: hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--compressed] [--enable-self-update]\n".
+      "Usage: hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--compressed] [--enable-self-update] [--default-hhvm-arg ARG...]\n".
       "Modes: resource, cli, server, server-obsolete.\n".
       "Roots select files or directories of .hack files recursively.\n".
       "Paths are sorted relative to the current directory.\n".
       "--typecheck checks the compiled resource before emitting output.\n".
       "--compressed compresses embedded source; launchers require gzip.\n".
       "--enable-self-update enables handshake-based replacement in server modes.\n".
+      "--default-hhvm-arg embeds one default HHVM argument; may be repeated.\n".
       "The output is written to stdout.\n",
     );
     exit(C\is_empty($args) ? 1 : 0);
@@ -775,6 +791,7 @@ async function cli_async()[defaults]: Awaitable<void> {
     $typecheck = false;
     $replace = false;
     $compressed = false;
+    $default_hhvm_args = vec[];
     while (!C\is_empty($args)) {
       if ($args[0] === '--enable-self-update') {
         $replace = true;
@@ -802,6 +819,9 @@ async function cli_async()[defaults]: Awaitable<void> {
           invariant($mode is null, '--mode may only be passed once.');
           $mode = HackCompiler\CompileMode::assert($args[1]);
           break;
+        case '--default-hhvm-arg':
+          $default_hhvm_args[] = $args[1];
+          break;
         case '--exclude':
           $path = realpath($args[1]);
           $excludes[] = $path is string
@@ -825,6 +845,7 @@ async function cli_async()[defaults]: Awaitable<void> {
       $typecheck,
       $replace,
       $compressed,
+      $default_hhvm_args,
     );
     await $output->writeAllAsync($compiled);
   } catch (Exception $e) {
@@ -1148,12 +1169,14 @@ function compile(
   CompileMode $mode,
   bool $replace = false,
   bool $compressed = false,
+  vec<string> $default_hhvm_args = vec[],
 )[]: string {
   return wrap_resource(
     _Private\compile_resource($sources),
     $mode,
     $replace,
     $compressed,
+    $default_hhvm_args,
   );
 }
 
@@ -1172,6 +1195,7 @@ async function compile_roots_async(
   bool $typecheck = false,
   bool $replace = false,
   bool $compressed = false,
+  vec<string> $default_hhvm_args = vec[],
 )[defaults]: Awaitable<string> {
   invariant(
     C\every(
@@ -1195,7 +1219,8 @@ async function compile_roots_async(
       _Private\prepare_server_resource($resource, $mode, $replace),
     );
   }
-  return wrap_resource($resource, $mode, $replace, $compressed);
+  return
+    wrap_resource($resource, $mode, $replace, $compressed, $default_hhvm_args);
 }
 
 ///// src/prepare_signing_preamble.hack /////
@@ -1332,7 +1357,7 @@ function sign_source(string $source)[]: string {
 namespace HTL\HackCompiler;
 /** hack-compiler is MIT licensed, see /LICENSE. */
 
-use namespace HH\Lib\{C, Str};
+use namespace HH\Lib\{C, Str, Vec};
 use function gzencode;
 
 /** Wrap an already compiled resource for the selected output mode. */
@@ -1341,10 +1366,15 @@ function wrap_resource(
   CompileMode $mode,
   bool $replace = false,
   bool $compressed = false,
+  vec<string> $default_hhvm_args = vec[],
 )[]: string {
   invariant(
     !$compressed || $mode !== CompileMode::RESOURCE,
     '--compressed requires a shell launcher mode (cli, server, server-obsolete).',
+  );
+  invariant(
+    C\is_empty($default_hhvm_args) || $mode !== CompileMode::RESOURCE,
+    '--default-hhvm-arg requires a shell launcher mode (cli, server, server-obsolete).',
   );
   $resource = _Private\prepare_server_resource($resource, $mode, $replace);
   switch ($mode) {
@@ -1361,7 +1391,8 @@ function wrap_resource(
       break;
   }
   if ($mode === CompileMode::SERVER || $mode === CompileMode::SERVER_OBSOLETE) {
-    $header = Str\replace($header, '__SERVER_ARGUMENTS__', _Private\SERVER_ARGUMENTS);
+    $header =
+      Str\replace($header, '__SERVER_ARGUMENTS__', _Private\SERVER_ARGUMENTS);
     if ($replace) {
       $header = Str\replace($header, 'replace=no', 'replace=yes');
     }
@@ -1371,6 +1402,9 @@ function wrap_resource(
       ($replace ? _Private\SERVER_REPLACE_RUNTIME."\n" : '').
       _Private\SERVER_RUNTIME;
   }
+  // Quote each argv element, then quote the complete serialized list for assignment.
+  $quote = (string $value) ==> "'".Str\replace($value, "'", "'\\''")."'";
+  $defaults = Vec\map($default_hhvm_args, $quote) |> Str\join($$, ' ');
   if ($compressed) {
     // The shell exits before parsing the binary payload.
     $header = Str\replace(
@@ -1378,17 +1412,17 @@ function wrap_resource(
       'tail -n +__SOURCE_LINE__ "$0" > ',
       'hack_compiler_extract "$0" ',
     );
-    $header = Str\replace(
-      $header,
-      'set -eu',
-      "set -eu\n"._Private\COMPRESSED_EXTRACT,
-    );
+    $header =
+      Str\replace($header, 'set -eu', "set -eu\n"._Private\COMPRESSED_EXTRACT);
     $resource = gzencode($resource, 9) as string;
   }
   $header .= "\nexit 0\n__HACK_COMPILER_RESOURCE__\n";
-  $source_line = C\count(Str\split($header, "\n"));
-  return
-    Str\replace($header, '__SOURCE_LINE__', (string)$source_line).$resource;
+  $source_line =
+    C\count(Str\split($header, "\n")) + C\count(Str\split($defaults, "\n")) - 1;
+  $header = Str\replace($header, '__SOURCE_LINE__', (string)$source_line);
+  // Insert defaults last so template replacements cannot alter argument values.
+  return Str\replace($header, '__DEFAULT_HHVM_ARGUMENTS__', $quote($defaults)).
+    $resource;
 }
 
 ///// src/write_source_async.hack /////

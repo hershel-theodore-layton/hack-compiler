@@ -13,13 +13,14 @@ async function cli_async()[defaults]: Awaitable<void> {
   $output = IO\request_output();
   if (C\is_empty($args) || $args[0] === '--help') {
     await $output->writeAllAsync(
-      "Usage: hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--compressed] [--enable-self-update]\n".
+      "Usage: hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--compressed] [--enable-self-update] [--default-hhvm-arg ARG...]\n".
       "Modes: resource, cli, server, server-obsolete.\n".
       "Roots select files or directories of .hack files recursively.\n".
       "Paths are sorted relative to the current directory.\n".
       "--typecheck checks the compiled resource before emitting output.\n".
       "--compressed compresses embedded source; launchers require gzip.\n".
       "--enable-self-update enables handshake-based replacement in server modes.\n".
+      "--default-hhvm-arg embeds one default HHVM argument; may be repeated.\n".
       "The output is written to stdout.\n",
     );
     exit(C\is_empty($args) ? 1 : 0);
@@ -32,6 +33,7 @@ async function cli_async()[defaults]: Awaitable<void> {
     $typecheck = false;
     $replace = false;
     $compressed = false;
+    $default_hhvm_args = vec[];
     while (!C\is_empty($args)) {
       if ($args[0] === '--enable-self-update') {
         $replace = true;
@@ -59,6 +61,9 @@ async function cli_async()[defaults]: Awaitable<void> {
           invariant($mode is null, '--mode may only be passed once.');
           $mode = HackCompiler\CompileMode::assert($args[1]);
           break;
+        case '--default-hhvm-arg':
+          $default_hhvm_args[] = $args[1];
+          break;
         case '--exclude':
           $path = realpath($args[1]);
           $excludes[] = $path is string
@@ -82,6 +87,7 @@ async function cli_async()[defaults]: Awaitable<void> {
       $typecheck,
       $replace,
       $compressed,
+      $default_hhvm_args,
     );
     await $output->writeAllAsync($compiled);
   } catch (Exception $e) {

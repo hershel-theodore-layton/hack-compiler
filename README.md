@@ -16,10 +16,10 @@ installed.
 ```sh
 # A cli application
 vendor/bin/hack-compiler.sh --mode cli --root src --root bin/main.hack \
-  --typecheck > application.sh
+  --typecheck --default-hhvm-arg -dhhvm.jit=0 > application.sh
 chmod +x application.sh
 ./application.sh --help
-./application.sh --hhvm-args -dhhvm.jit=0 -- --help
+./application.sh --hhvm-args -dhhvm.jit=1 -- --help
 
 # A server
 vendor/bin/hack-compiler.sh --mode server --root src --root bin/server.hack \
@@ -46,7 +46,7 @@ vendor/bin/hack-compiler-serve-resource.sh -b ./server.resource -d -p 10641
 ## CLI
 
 ```CLI
-hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--compressed]
+hack-compiler.sh --mode MODE --root PATH [--root PATH...] [--exclude PREFIX...] [--typecheck] [--compressed] [--default-hhvm-arg ARG...]
 hack-compiler-serve-resource.sh -b PATH [-p PORT] [-g] [-d]
 
 --mode MODE           Required: resource, cli, server, or server-obsolete.
@@ -56,6 +56,10 @@ hack-compiler-serve-resource.sh -b PATH [-p PORT] [-g] [-d]
 --typecheck           Check the combined source with hh_server before emitting it.
 --compressed          Compress embedded source in cli/server/server-obsolete modes.
                       Requires gzip at runtime.
+--default-hhvm-arg ARG
+                      Embed one default HHVM argument in a shell launcher. Repeat
+                      for multiple arguments, e.g. --default-hhvm-arg -dmemory_limit=128M.
+                      Rejected in resource mode.
 --enable-self-update  Allow another server to replace a running one.
 --help                Show usage.
 
@@ -69,6 +73,9 @@ server-obsolete       Preserve the legacy Linters Server launcher. Pass -e to us
 
 All launchers:        --hhvm-args starts HHVM options; -- resumes script arguments.
                       Without --hhvm-args, all arguments go to the script.
+                      Embedded launchers use the build-time defaults unless at least
+                      one runtime HHVM argument is supplied; then the entire default
+                      list is replaced. An empty --hhvm-args -- keeps the defaults.
 ```
 
 ## Mangling

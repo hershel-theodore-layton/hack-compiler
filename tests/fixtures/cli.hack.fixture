@@ -12,6 +12,7 @@ async function main_async()[defaults]: Awaitable<void> {
     'args' => Vec\drop(HH\global_get('argv') as vec<_>, 1),
     'environment' => getenv('HACK_COMPILER_CLI_TEST'),
     'input' => $input,
+    'user_agent' => ini_get('user_agent'),
     'memory_limit' => ini_get('memory_limit'),
   )) as string;
   await IO\request_output()->writeAllAsync($result."\n");

@@ -16,6 +16,23 @@ for compression in plain compressed; do
   # The empty option intentionally expands to no arguments.
   hhvm "$@" bin/hack-compiler.hack $compression_option --mode cli --root tests/fixtures/cli.hack.fixture \
     > "$test_dir/cli.sh"
+  # Defaults preserve argv boundaries, and any runtime option replaces the whole list.
+  default_option="O'Reilly \$(touch injected)
+set -eu __SOURCE_LINE__ __DEFAULT_HHVM_ARGUMENTS__"
+  hhvm "$@" bin/hack-compiler.hack $compression_option --mode cli \
+    --root tests/fixtures/cli.hack.fixture \
+    --default-hhvm-arg -d --default-hhvm-arg memory_limit=96M \
+    --default-hhvm-arg "-duser_agent=\"$default_option\"" > "$test_dir/defaults.sh"
+  hhvm "$@" -d memory_limit=96M "-duser_agent=\"$default_option\"" tests/fixtures/cli.hack.fixture hello < /dev/null > "$test_dir/expected"
+  sh "$test_dir/defaults.sh" hello < /dev/null > "$test_dir/actual"
+  cmp "$test_dir/expected" "$test_dir/actual"
+  sh "$test_dir/defaults.sh" --hhvm-args -- hello < /dev/null > "$test_dir/actual"
+  cmp "$test_dir/expected" "$test_dir/actual"
+  # A different option must also erase the default memory limit.
+  hhvm "$@" -d user_agent=override tests/fixtures/cli.hack.fixture hello < /dev/null > "$test_dir/expected"
+  sh "$test_dir/defaults.sh" --hhvm-args -d user_agent=override -- hello < /dev/null > "$test_dir/actual"
+  cmp "$test_dir/expected" "$test_dir/actual"
+  test ! -e injected
   # Runtime options go before the resource; arguments on either side retain their order.
   quoted="a'b\"c"
   multiline='first line
@@ -59,4 +76,11 @@ fi
 test ! -s "$test_dir/actual"
 grep -q gzip "$test_dir/error"
 test -z "$(find "$test_dir/tmp" -maxdepth 1 -name 'hack-compiler-cli.*' -print)"
+if hhvm "$@" bin/hack-compiler.hack --mode resource --default-hhvm-arg -dhhvm.jit=0 \
+  --root tests/fixtures/cli.hack.fixture > "$test_dir/invalid" 2> "$test_dir/error"; then
+  echo 'Default HHVM arguments must require a shell launcher.' >&2
+  exit 1
+fi
+grep -q -- '--default-hhvm-arg requires a shell launcher' "$test_dir/error"
+test ! -s "$test_dir/invalid"
 echo 'Compression validation and failed extraction cleanup passed.'

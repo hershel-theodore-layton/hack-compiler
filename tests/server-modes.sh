@@ -27,10 +27,15 @@ trap cleanup 0
 trap 'exit 1' HUP INT TERM
 
 for mode in resource server server-obsolete; do
-  compression_option=${HACK_COMPILER_TEST_COMPRESSED:-}
-  if [ "$mode" = resource ]; then compression_option=; fi
-  hhvm "$@" bin/hack-compiler.hack $compression_option --mode "$mode" \
-    --root tests/fixtures/server.hack.fixture > "$test_dir/$mode"
+  if [ "$mode" = resource ]; then
+    hhvm "$@" bin/hack-compiler.hack --mode "$mode" \
+      --root tests/fixtures/server.hack.fixture > "$test_dir/$mode"
+  else
+    hhvm "$@" bin/hack-compiler.hack ${HACK_COMPILER_TEST_COMPRESSED:-} --mode "$mode" \
+      --default-hhvm-arg -dmemory_limit=96M \
+      --default-hhvm-arg -duser_agent=default-agent \
+      --root tests/fixtures/server.hack.fixture > "$test_dir/$mode"
+  fi
 done
 for mode in server server-obsolete; do
   hhvm "$@" bin/hack-compiler.hack ${HACK_COMPILER_TEST_COMPRESSED:-} --mode "$mode" --enable-self-update --typecheck \
@@ -120,6 +125,19 @@ check_options() {
 }
 
 cd "$test_dir"
+# Both embedded server modes use defaults without runtime HHVM arguments.
+for default_server in ./server ./server-obsolete; do
+  sh "$default_server" -e -d -p "$port" > server.log 2>&1
+  server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
+  test "$(curl --fail --silent "http://localhost:$port/?action=options")" = 'default-agent|100663296'
+  stop_server
+  # Overriding only memory_limit must also erase the default user_agent.
+  sh "$default_server" -e -d -p "$port" --hhvm-args -dmemory_limit=256M -- > server.log 2>&1
+  server_pid=$(curl --fail --silent "http://localhost:$port/?action=pid")
+  test "$(curl --fail --silent "http://localhost:$port/?action=options")" = '|268435456'
+  stop_server
+done
+
 sh ./server --hhvm-args "-duser_agent=\"$server_option\"" -dmemory_limit=256M -- -e -p "$port" > server.log 2>&1 &
 launcher_pid=$!
 wait_for_response compiled

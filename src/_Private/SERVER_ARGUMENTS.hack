@@ -14,13 +14,18 @@ hack_compiler_server_quote() {
 }
 
 hack_compiler_server_mode=launcher
-hack_compiler_server_hhvm_arguments=
+hack_compiler_server_hhvm_arguments=__DEFAULT_HHVM_ARGUMENTS__
+hack_compiler_server_has_hhvm_arguments=no
 hack_compiler_server_launcher_arguments=
 for hack_compiler_server_argument in "$@"; do
   case "$hack_compiler_server_mode:$hack_compiler_server_argument" in
     launcher:--hhvm-args) hack_compiler_server_mode=hhvm ;;
     hhvm:--) hack_compiler_server_mode=remaining ;;
     hhvm:*)
+      if [ "$hack_compiler_server_has_hhvm_arguments" = no ]; then
+        hack_compiler_server_hhvm_arguments=
+        hack_compiler_server_has_hhvm_arguments=yes
+      fi
       hack_compiler_server_hhvm_arguments="$hack_compiler_server_hhvm_arguments$(hack_compiler_server_quote "$hack_compiler_server_argument")"
       ;;
     *)

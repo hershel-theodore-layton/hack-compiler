@@ -12,6 +12,7 @@ async function compile_roots_async(
   bool $typecheck = false,
   bool $replace = false,
   bool $compressed = false,
+  vec<string> $default_hhvm_args = vec[],
 )[defaults]: Awaitable<string> {
   invariant(
     C\every(
@@ -35,5 +36,6 @@ async function compile_roots_async(
       _Private\prepare_server_resource($resource, $mode, $replace),
     );
   }
-  return wrap_resource($resource, $mode, $replace, $compressed);
+  return
+    wrap_resource($resource, $mode, $replace, $compressed, $default_hhvm_args);
 }
